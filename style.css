@@ -4,3 +4,13 @@
 @media(max-width:900px){.cols4{grid-template-columns:repeat(2,minmax(0,1fr))}.cols3{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:630px){body{font-size:13px}.wrap{padding-inline:12px}.top{gap:8px}.identity h1{font-size:19px}.identity p{font-size:11px}.logo{height:41px;width:41px;font-size:22px}.header-actions{width:100%;justify-content:space-between}.header-actions button{flex:1}.tabs button{padding:10px 12px;font-size:12px;min-height:44px}main.wrap{padding-top:17px}.page-head h2{font-size:21px}.card{padding:14px;border-radius:16px}.cols2,.cols3{grid-template-columns:1fr}.cols4{gap:9px}.metric .big{font-size:21px}.barrow{grid-template-columns:80px 1fr 72px;gap:7px;font-size:12px}.drawer{padding:0;background:#f7faf9}.sheet{min-height:100dvh;width:100%;border-radius:0;margin:0}.sheet-head{border-radius:0}.sheet-foot{border-radius:0}.sheet-body{padding:11px}.sheet-head{padding:13px}.sheet-head h2{font-size:18px}.item-card{padding:11px}.item-grid{grid-template-columns:1fr 1fr}.item-grid .field:last-child:nth-child(odd){grid-column:1/-1}.editor-totals{grid-template-columns:1fr}.twocol{grid-template-columns:1fr 1fr}.receipt .actions{width:100%}.receipt .actions button{flex:1}.controls .field{min-width:130px}.bar-item{grid-template-columns:73px 1fr 75px}.sheet-foot button{flex:1}}
 @media(max-width:360px){.twocol{grid-template-columns:1fr}.cols4{grid-template-columns:1fr 1fr}.metric .big{font-size:18px}.item-grid{grid-template-columns:1fr}.item-grid .field:last-child:nth-child(odd){grid-column:auto}}
+
+/* Product comparison ranking: cheapest first, ties clearly visible */
+.ranked-stores{display:grid;gap:10px}
+.ranked-stores .item-card{margin:0}
+.ranked-stores .winner{border:2px solid #d5aa65;background:#fffaf0}
+.ranked-stores .compare-store{font-size:17px;margin:5px 0 3px}
+.ranked-stores .bigprice{font-weight:900;color:#0b615b;font-size:21px;white-space:nowrap;direction:ltr;text-align:left}
+.ranked-stores .secondary-rank{background:#eef2f5;color:#53656b}
+.metric .store-name{font-size:17px;white-space:normal;direction:rtl;text-align:right;line-height:1.5;overflow-wrap:anywhere}
+@media(max-width:590px){.ranked-stores .bigprice{font-size:18px}.ranked-stores .compare-store{font-size:16px}}
