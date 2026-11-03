@@ -52,7 +52,7 @@ function compareFamilies(){
   if(!clean||clean.includes('غير واضح'))return;
   var ascii=name.replace(/[٠-٩]/g,function(d){return '٠١٢٣٤٥٦٧٨٩'.indexOf(d)}).replace(/[۰-۹]/g,function(d){return '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)});
   /* لا نخلط التونة العادية مع السلطات أو عبوات بأحجام مختلفة. */
-  var weight=ascii.match(/(\d+(?:\.\d+)?)\s*(?:جرام|غرام|جم|غ)\b/);
+  var weight=ascii.match(/(\d+(?:\.\d+)?)\s*(?:جرام|غرام|جم|غ)(?=$|[\s\)×x*،,])/);
   if(!/تون[هة]/.test(clean)||!weight||/سلط[هة]|سلاد|كسكس|سلطة/.test(clean))return;
   var grams=Number(weight[1]),key='family:tuna:'+grams;
   if(!groups.has(key))groups.set(key,{key:key,name:'تونة '+grams+' جرام — مقارنة العلامات',hits:[],spend:0,shops:new Set(),receipts:new Set(),isFamily:true,brands:new Set()});
