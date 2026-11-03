@@ -44,6 +44,38 @@ function norm(t){return String(t||'').normalize('NFKC').toLowerCase().replace(/[
 function productSignature(name){var words=norm(name).split(' ').filter(Boolean).map(function(w){w=w.length>4&&w.slice(0,2)==='ال'?w.slice(2):w;return w.replace(/ة$/,'ه').replace(/ى$/,'ي')});if(words.includes('لتر')&&!words.some(function(w){return /^\d+$/.test(w)}))words.push('1');return words.sort().join('|')}
 function pkey(i,r){var b=String(i.barcode||'').replace(/\D/g,'');if(b.length>=8)return 'barcode:'+b;var name=norm(i.name),size=norm(i.size);return !name||name.includes('غير واضح')?'unknown:'+r.id+':'+i.id:'name:'+productSignature(name)+'|'+productSignature(size)}
 function products(){var map=new Map();receipts().forEach(function(r){(r.items||[]).forEach(function(i){if(!i.name)return;var key=pkey(i,r),p=map.get(key),q=val(i.quantity)||1;if(!p){p={key:key,name:i.name,barcode:i.barcode||'',hits:[],spend:0,receipts:new Set(),shops:new Set()};map.set(key,p)}p.hits.push({date:r.date,store:r.store,price:round3(val(i.total)/q),total:val(i.total),qty:q,invoice:r.invoiceNo});p.spend+=val(i.total);p.shops.add(r.store);p.receipts.add(r.id)})});return [...map.values()].sort(function(a,b){return b.hits.length-a.hits.length||a.name.localeCompare(b.name,'ar')})}
+/* مقارنة أنواع الصنف الواحد عند تساوي نوعه وحجم عبوته، مع الاحتفاظ باسم العلامة المطبوع. */
+function compareFamilies(){
+ var groups=new Map();
+ receipts().forEach(function(r){(r.items||[]).forEach(function(i){
+  var name=String(i.name||''),clean=norm(name);
+  if(!clean||clean.includes('غير واضح'))return;
+  var ascii=name.replace(/[٠-٩]/g,function(d){return '٠١٢٣٤٥٦٧٨٩'.indexOf(d)}).replace(/[۰-۹]/g,function(d){return '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)});
+  /* لا نخلط التونة العادية مع السلطات أو عبوات بأحجام مختلفة. */
+  var weight=ascii.match(/(\d+(?:\.\d+)?)\s*(?:جرام|غرام|جم|غ)\b/);
+  if(!/تون[هة]/.test(clean)||!weight||/سلط[هة]|سلاد|كسكس|سلطة/.test(clean))return;
+  var grams=Number(weight[1]),key='family:tuna:'+grams;
+  if(!groups.has(key))groups.set(key,{key:key,name:'تونة '+grams+' جرام — مقارنة العلامات',hits:[],spend:0,shops:new Set(),receipts:new Set(),isFamily:true,brands:new Set()});
+  var p=groups.get(key),qty=val(i.quantity)||1,total=val(i.total);
+  if(qty<=0)return;
+  p.hits.push({date:r.date,store:r.store,price:round3(total/qty),total:total,qty:qty,invoice:r.invoiceNo,name:name});
+  p.receipts.add(r.id);p.shops.add(r.store);p.brands.add(name);p.spend+=total;
+ })});
+ return [...groups.values()].filter(function(p){return p.shops.size>=2}).sort(function(a,b){return b.shops.size-a.shops.size||b.hits.length-a.hits.length});
+}
+function comparisonProducts(){return compareFamilies().concat(products())}
+function storeRanking(p){
+ var groups=new Map();
+ p.hits.forEach(function(x){var store=x.store||'غير معروف';if(!groups.has(store))groups.set(store,[]);groups.get(store).push(x)});
+ var rows=[...groups.entries()].map(function(entry){
+  var sorted=entry[1].slice().sort(function(a,b){return a.date.localeCompare(b.date)});
+  var lowest=sorted.reduce(function(best,x){return x.price<best.price?x:best},sorted[0]);
+  var latest=sorted[sorted.length-1];
+  return {store:entry[0],minimum:lowest.price,lowestName:lowest.name||p.name,latest:latest.price,lastName:latest.name||p.name,date:latest.date,lowDate:lowest.date};
+ }).sort(function(a,b){return a.minimum-b.minimum||a.store.localeCompare(b.store,'ar')});
+ var distinct=[];rows.forEach(function(x){var index=distinct.findIndex(function(p){return Math.abs(p-x.minimum)<0.0005});if(index<0){distinct.push(x.minimum);index=distinct.length-1}x.rank=index+1});
+ return rows;
+}
 function monthsData(){var map=new Map();receipts().forEach(function(r){var m=String(r.date||'').slice(0,7);if(!/^\d{4}-\d{2}$/.test(m))return;if(!map.has(m))map.set(m,{month:m,spent:0,vat:0,count:0});var x=map.get(m);x.spent=round3(x.spent+val(r.total));x.vat=round3(x.vat+val(r.vat));x.count++});return map}
 function budgetLedger(){var months=[...monthsData().keys()].sort(),start=months[0]||monthNow(),end=months.length&&months[months.length-1]>monthNow()?months[months.length-1]:monthNow(),map=monthsData(),carry=0,base=val(db.monthlyBudget);return monthRange(start,end).map(function(m){var x=map.get(m)||{spent:0,vat:0,count:0},opening=carry,available=round3(base+opening),closing=round3(available-x.spent);carry=closing;return {month:m,base:base,opening:opening,available:available,spent:x.spent,vat:x.vat,count:x.count,closing:closing}})}
 function averages(){var l=budgetLedger(),active=l.filter(function(r){return r.count}),total=add(l,function(r){return r.spent});return {total:total,months:l.length,active:active.length,average:l.length?round3(total/l.length):0,activeAverage:active.length?round3(total/active.length):0}}
@@ -70,10 +102,42 @@ function drawMonths(){var l=budgetLedger(),stat=averages(),selected=monthFilter?
  '<div class="space"></div>'+box('<h3>كشف الرصيد المرحّل</h3><div class="tablewrap"><table><thead><tr><th>الشهر</th><th>ميزانية الشهر</th><th>مرحّل من السابق</th><th>الإنفاق</th><th>المتبقي</th><th>عدد الفواتير</th></tr></thead><tbody>'+shown.map(function(x){return '<tr><td>'+h(mtitle(x.month))+'</td><td>'+sar(x.base)+'</td><td>'+sar(x.opening)+'</td><td>'+sar(x.spent)+'</td><td class="'+(x.closing<0?'up':'good')+'">'+sar(x.closing)+'</td><td>'+x.count+'</td></tr>'}).join('')+'</tbody></table></div><p class="hint">المتبقي = الميزانية الشهرية الثابتة + رصيد الشهر الماضي − إنفاق الشهر. اختيار شهر هنا يغيّر العرض فقط.</p>')+
  '<div class="space"></div>'+box('<h3>المتاجر في الفترة المختارة</h3>'+bars(storeTotals(receipts().filter(function(r){return !monthFilter||r.date.slice(0,7)===monthFilter}))))}
 function graph(hits){if(!hits.length)return '<div class="empty">لا توجد أسعار</div>';var a=hits.slice().sort(function(x,y){return x.date.localeCompare(y.date)}),vals=a.map(function(x){return x.price}),lo=Math.min.apply(null,vals),hi=Math.max.apply(null,vals);if(lo===hi){lo=Math.max(0,lo-.5);hi+=.5}var w=680,H=220,L=62,R=26,T=20,B=48,xx=function(i){return L+(a.length===1?(w-L-R)/2:(w-L-R)*i/(a.length-1))},yy=function(x){return T+(hi-x)/(hi-lo)*(H-T-B)};return '<svg class="lineplot" viewBox="0 0 '+w+' '+H+'" role="img" aria-label="تطور السعر">'+[0,.25,.5,.75,1].map(function(v){var y=T+v*(H-T-B);return '<line x1="'+L+'" y1="'+y+'" x2="'+(w-R)+'" y2="'+y+'" stroke="#dce6e7"/><text x="'+(L-7)+'" y="'+(y+4)+'" text-anchor="end" font-size="12" fill="#6e8387">'+fmt(hi-v*(hi-lo))+'</text>'}).join('')+'<polyline points="'+a.map(function(x,i){return xx(i)+','+yy(x.price)}).join(' ')+'" fill="none" stroke="#087e79" stroke-width="3"/>'+a.map(function(x,i){return '<circle cx="'+xx(i)+'" cy="'+yy(x.price)+'" r="5" fill="#087e79"><title>'+h(x.date+' • '+x.store+' • '+sar(x.price))+'</title></circle><text x="'+xx(i)+'" y="'+(H-9)+'" text-anchor="middle" font-size="11" fill="#6e8387">'+h(x.date.slice(5))+'</text>'}).join('')+'</svg>'}
-function drawCompare(){var list=products(),matches=list.filter(function(x){return norm(x.name).includes(norm(prodSearch))}),p=matches.find(function(x){return x.key===selectedProduct})||matches.find(function(x){return new Set(x.hits.map(function(z){return z.date.slice(0,7)})).size>1&&x.shops.size>1})||matches[0];if(p)selectedProduct=p.key;var months=[...monthsData().keys()].sort(),panel='<div class="empty">لم تُسجل منتجات بعد</div>';if(p){var uniq=new Map();p.hits.forEach(function(x){var key=x.date+'|'+x.store+'|'+x.price;if(!uniq.has(key))uniq.set(key,x)});var hits=[...uniq.values()].sort(function(a,b){return a.date.localeCompare(b.date)}),storeInfo=[...new Set(hits.map(function(x){return x.store}))].map(function(s){var z=hits.filter(function(x){return x.store===s});return {store:s,minimum:Math.min.apply(null,z.map(function(x){return x.price})),latest:z[z.length-1].price,date:z[z.length-1].date}}).sort(function(a,b){return a.minimum-b.minimum});panel=box('<h3>'+h(p.name)+'</h3><p class="hint">موجود في '+p.receipts.size+' فاتورة، و'+p.shops.size+' متجر</p><div class="grid cols3">'+box('<div class="label">أقل سعر</div><div class="big">'+sar(Math.min.apply(null,hits.map(function(x){return x.price})))+'</div>','metric')+box('<div class="label">آخر سعر</div><div class="big">'+sar(hits[hits.length-1].price)+'</div>','metric')+box('<div class="label">مجموع المشتريات</div><div class="big">'+sar(p.spend)+'</div>','metric')+'</div><div class="space"></div><h3>تطور سعر الوحدة</h3>'+graph(hits)+'<p class="chart-note">لا تُكرر نقاط المنتج المتماثل في اليوم والمتجر والسعر نفسه.</p><h3>مقارنة أسعار المتاجر للمنتج</h3><div class="tablewrap"><table><thead><tr><th>المتجر</th><th>الأقل</th><th>الأحدث</th><th>التاريخ</th></tr></thead><tbody>'+storeInfo.map(function(z){return '<tr><td>'+h(z.store)+'</td><td>'+sar(z.minimum)+'</td><td>'+sar(z.latest)+'</td><td>'+h(z.date)+'</td></tr>'}).join('')+'</tbody></table></div><p class="hint">تستخدم المطابقة الباركود إن وجد وإلا الاسم والعبوة. لا يُدمج صنف «غير واضح» مع غيره.</p>')}return title('المقارنات','مقارنة المنتجات والمتاجر على امتداد كل الشهور دون اختيار شهر')+
- box('<h3>الأشهر والمتاجر المسجلة</h3><div class="badge-row">'+months.map(function(m){return '<span class="tag">'+h(mtitle(m))+'</span>'}).join('')+'<span class="tag">'+shops().length+' متجر</span></div>')+'<div class="space"></div>'+
- box('<div class="grid cols2">'+field('ابحث عن منتج','searchProducts',prodSearch,'search','id="searchProducts"')+options('productSelect','المنتج',selectedProduct,matches.map(function(x){return [x.key,x.name+' • '+x.hits.length+' بند']}))+'</div>')+
- '<div class="space"></div>'+(p&&new Set(p.hits.map(function(x){return x.date.slice(0,7)})).size===1&&months.length>1?'<div class="alert info">هذا المنتج ظهر في شهر واحد فقط. اختر منتجًا مشتركًا بين الفواتير لرؤية تغير السعر بين الشهور.</div>':'')+panel+'<div class="space"></div>'+box('<h3>صرف المتاجر الإجمالي</h3>'+bars(storeTotals())+'<p class="hint">ارتفاع إجمالي الصرف في متجر لا يعني ارتفاع أسعاره؛ قارن الصنف نفسه أعلاه.</p>')}
+function drawCompare(){
+ var list=comparisonProducts(),matches=list.filter(function(x){return norm(x.name).includes(norm(prodSearch))}),
+ p=matches.find(function(x){return x.key===selectedProduct})||matches.find(function(x){return x.isFamily&&x.shops.size>1})||matches.find(function(x){return new Set(x.hits.map(function(z){return z.date.slice(0,7)})).size>1&&x.shops.size>1})||matches[0];
+ if(p)selectedProduct=p.key;else selectedProduct='';
+ var months=[...monthsData().keys()].sort(),panel='<div class="empty">لم تُسجل منتجات بعد</div>';
+ if(p){
+  var uniq=new Map();
+  p.hits.forEach(function(x){var key=x.date+'|'+x.store+'|'+x.price+'|'+(x.name||'');if(!uniq.has(key))uniq.set(key,x)});
+  var hits=[...uniq.values()].sort(function(a,b){return a.date.localeCompare(b.date)}),
+  storeInfo=storeRanking(p),tied=storeInfo.length>1&&storeInfo[0].rank===storeInfo[1].rank,
+  cheapest=storeInfo.filter(function(x){return x.rank===1}).map(function(x){return x.store}).join('، ');
+  var rankCards=storeInfo.map(function(x){
+    var leading=x.rank===1,position=leading?(tied?'الأقل بالتساوي':'الأقل سعرًا'):'المرتبة '+x.rank;
+    return '<div class="item-card '+(leading?'winner':'')+'"><div class="between"><div><span class="pill '+(leading?'':'secondary-rank')+'">'+position+'</span><h3 class="compare-store">'+h(x.store)+'</h3><div class="hint">'+h(x.lowestName)+'</div></div><strong class="bigprice">'+fmt(x.minimum,3)+' ر.س</strong></div><div class="hint pull">أقل سعر مرصود للوحدة • '+h(x.lowDate)+' | الأحدث: '+fmt(x.latest,3)+' ر.س ('+h(x.date)+')</div></div>';
+  }).join('');
+  panel=box('<h3>'+h(p.name)+'</h3><p class="hint">موجود في '+p.receipts.size+' فاتورة و '+p.shops.size+' متجر</p>'+
+   (p.isFamily?'<div class="alert info">المقارنة تشمل علامات تجارية مختلفة للمنتج نفسه وبالحجم نفسه. نعرض اسم كل علامة أمام متجرها؛ لا نفترض تطابق الجودة أو المكونات.</div>':'')+
+   '<div class="grid cols3">'+
+   box('<div class="label">أقل سعر للوحدة</div><div class="big">'+fmt(storeInfo[0].minimum,3)+' ر.س</div>','metric')+
+   box('<div class="label">المتجر الأرخص'+(tied?' بالتساوي':'')+'</div><div class="big store-name">'+h(cheapest)+'</div>','metric')+
+   box('<div class="label">إجمالي الصرف على الصنف</div><div class="big">'+sar(p.spend)+'</div>','metric')+
+   '</div><div class="space"></div><h3>ترتيب المتاجر حسب الأقل سعرًا</h3><div class="ranked-stores">'+rankCards+'</div>'+
+   '<p class="hint">ترتيب حسب أقل سعر تاريخي للوحدة. إذا تساوى متجران في السعر تظهر المرتبة الأولى لكليهما؛ ولا يُستبعد أي متجر.</p>'+
+   '<div class="space"></div><h3>تطور سعر الوحدة بين الأشهر</h3>'+graph(hits)+
+   '<p class="chart-note">تُدمج نقاط السعر المتطابقة للمنتج في اليوم والمتجر ذاته، ولا تُحذف عمليات الشراء من الإجماليات.</p>'+
+   '<h3>تفاصيل المتاجر</h3><div class="tablewrap"><table><thead><tr><th>الترتيب</th><th>المتجر</th><th>اسم الصنف</th><th>أقل سعر</th><th>آخر سعر</th><th>آخر تاريخ</th></tr></thead><tbody>'+
+   storeInfo.map(function(x){return '<tr><td>'+x.rank+'</td><td>'+h(x.store)+'</td><td>'+h(x.lowestName)+'</td><td>'+fmt(x.minimum,3)+' ر.س</td><td>'+fmt(x.latest,3)+' ر.س</td><td>'+h(x.date)+'</td></tr>'}).join('')+
+   '</tbody></table></div><p class="hint">عند غياب الباركود تكون المطابقة بالاسم والحجم. ويمكن اختيار منتج بعلامة معينة لإجراء مقارنة مطابقة تمامًا.</p>');
+ }
+ return title('المقارنات','أقل سعر أولًا، مع إظهار كل المتاجر المتساوية — جميع الأشهر دون فلتر')+
+ box('<h3>الأشهر والمتاجر المسجلة</h3><div class="badge-row">'+months.map(function(m){return '<span class="tag">'+h(mtitle(m))+'</span>'}).join('')+'<span class="tag">'+shops().length+' متجر</span></div>')+
+ '<div class="space"></div>'+box('<div class="grid cols2">'+field('ابحث عن منتج','searchProducts',prodSearch,'search','id="searchProducts"')+
+ options('productSelect','الصنف أو مجموعة المقارنة',selectedProduct,matches.map(function(x){return [x.key,x.name+' • '+x.shops.size+' متجر']}))+'</div>')+
+ '<div class="space"></div>'+panel+'<div class="space"></div>'+box('<h3>صرف المتاجر الإجمالي</h3>'+bars(storeTotals())+
+ '<p class="hint">ارتفاع إجمالي المشتريات من متجر لا يعني أنه الأغلى؛ يعتمد ترتيب الأسعار أعلاه على المنتج المحدد وحجم عبوتـه.</p>');
+}
 function drawSettings(){return title('الإعدادات والنسخ','التخزين محلي في المتصفح ولا ينتقل تلقائيًا بين الأجهزة')+
  box('<h3>الميزانية الشهرية الأساسية</h3><p class="hint">المبلغ نفسه يتكرر كل شهر، ويضاف إليه رصيد الشهر الماضي، ويُخصم إنفاق الشهر. العجز السالب يُرحّل كذلك.</p><div class="controls">'+field('الميزانية الشهرية (ريال)','monthlyBudget',db.monthlyBudget||'','number','id="monthlyBudget" min="0" step="0.01"')+btn('حفظ','saveBudget','primary')+'</div>')+'<div class="space"></div>'+
  box('<h3>نسخ احتياطي كامل</h3><p>نزّل ملفًا يحوي كل الفواتير، المتاجر، الأصناف والميزانية. استيراد نسخة احتياطية يدمج فقط الفواتير غير الموجودة ولا يمسح السجل الحالي.</p><div class="mini-toolbar">'+btn('⬇ نسخة JSON','backup','primary')+btn('تصدير CSV','csv','secondary')+'</div><div class="space"></div><div class="field"><label>استعادة نسخة من راصد القديم أو الجديد</label><input id="restoreFile" type="file" accept=".json,application/json"></div><div class="alert info">مهم: النسخ محفوظة على جهازك، ولا تُرفع إلى GitHub. احتفظ بها في ملفات الجوال أو Google Drive.</div>')+
