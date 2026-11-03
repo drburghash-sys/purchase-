@@ -63,7 +63,7 @@ function compareFamilies(){
  })});
  return [...groups.values()].filter(function(p){return p.shops.size>=2}).sort(function(a,b){return b.shops.size-a.shops.size||b.hits.length-a.hits.length});
 }
-function comparisonProducts(){return compareFamilies().concat(products())}
+function comparisonProducts(){var families=compareFamilies(),covered=new Set();families.forEach(function(g){g.hits.forEach(function(x){covered.add(norm(x.name||''))})});return families.concat(products().filter(function(p){return !covered.has(norm(p.name))}))}
 function storeRanking(p){
  var groups=new Map();
  p.hits.forEach(function(x){var store=x.store||'غير معروف';if(!groups.has(store))groups.set(store,[]);groups.get(store).push(x)});
@@ -103,7 +103,7 @@ function drawMonths(){var l=budgetLedger(),stat=averages(),selected=monthFilter?
  '<div class="space"></div>'+box('<h3>المتاجر في الفترة المختارة</h3>'+bars(storeTotals(receipts().filter(function(r){return !monthFilter||r.date.slice(0,7)===monthFilter}))))}
 function graph(hits){if(!hits.length)return '<div class="empty">لا توجد أسعار</div>';var a=hits.slice().sort(function(x,y){return x.date.localeCompare(y.date)}),vals=a.map(function(x){return x.price}),lo=Math.min.apply(null,vals),hi=Math.max.apply(null,vals);if(lo===hi){lo=Math.max(0,lo-.5);hi+=.5}var w=680,H=220,L=62,R=26,T=20,B=48,xx=function(i){return L+(a.length===1?(w-L-R)/2:(w-L-R)*i/(a.length-1))},yy=function(x){return T+(hi-x)/(hi-lo)*(H-T-B)};return '<svg class="lineplot" viewBox="0 0 '+w+' '+H+'" role="img" aria-label="تطور السعر">'+[0,.25,.5,.75,1].map(function(v){var y=T+v*(H-T-B);return '<line x1="'+L+'" y1="'+y+'" x2="'+(w-R)+'" y2="'+y+'" stroke="#dce6e7"/><text x="'+(L-7)+'" y="'+(y+4)+'" text-anchor="end" font-size="12" fill="#6e8387">'+fmt(hi-v*(hi-lo))+'</text>'}).join('')+'<polyline points="'+a.map(function(x,i){return xx(i)+','+yy(x.price)}).join(' ')+'" fill="none" stroke="#087e79" stroke-width="3"/>'+a.map(function(x,i){return '<circle cx="'+xx(i)+'" cy="'+yy(x.price)+'" r="5" fill="#087e79"><title>'+h(x.date+' • '+x.store+' • '+sar(x.price))+'</title></circle><text x="'+xx(i)+'" y="'+(H-9)+'" text-anchor="middle" font-size="11" fill="#6e8387">'+h(x.date.slice(5))+'</text>'}).join('')+'</svg>'}
 function drawCompare(){
- var list=comparisonProducts(),matches=list.filter(function(x){return norm(x.name).includes(norm(prodSearch))}),
+ var list=comparisonProducts(),query=norm(prodSearch),matches=list.filter(function(x){return !query||norm(x.name).includes(query)||(x.isFamily&&[...x.brands].some(function(name){return norm(name).includes(query)}))}),
  p=matches.find(function(x){return x.key===selectedProduct})||matches.find(function(x){return x.isFamily&&x.shops.size>1})||matches.find(function(x){return new Set(x.hits.map(function(z){return z.date.slice(0,7)})).size>1&&x.shops.size>1})||matches[0];
  if(p)selectedProduct=p.key;else selectedProduct='';
  var months=[...monthsData().keys()].sort(),panel='<div class="empty">لم تُسجل منتجات بعد</div>';
