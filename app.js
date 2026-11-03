@@ -24,7 +24,14 @@ function btn(label,action,style,extra){return '<button type="button" class="'+(s
 function field(label,name,value,type,extra){return '<div class="field"><label>'+h(label)+'</label><input type="'+(type||'text')+'" name="'+h(name)+'" value="'+h(value==null?'':value)+'" '+(extra||'')+'></div>'}
 function options(name,label,selected,items){return '<div class="field"><label>'+h(label)+'</label><select name="'+h(name)+'">'+items.map(function(i){return '<option value="'+h(i[0])+'" '+(String(i[0])===String(selected)?'selected':'')+'>'+h(i[1])+'</option>'}).join('')+'</select></div>'}
 function notify(msg){toastNode.textContent=msg;toastNode.classList.add('show');clearTimeout(notify.t);notify.t=setTimeout(function(){toastNode.classList.remove('show')},3400)}
-function initial(){return {version:2,createdAt:today(),monthlyBudget:0,receipts:copy(window.RASID_SEED||[])}}
+function initial(){var seeds=copy(window.RASID_SEED||[]),legacyCount=0,budget=0;
+ try{var text=localStorage.getItem('rasid-purchases-v1'),old=text?JSON.parse(text):null;
+ if(old&&Array.isArray(old.receipts)){budget=round3(val(old.budget));old.receipts.forEach(function(r){if(!r||!Array.isArray(r.items)||!/^\d{4}-\d{2}-\d{2}$/.test(r.date||''))return;
+ var entry=copy(r);entry.id=entry.id||rid();entry.review=!!(entry.review||entry.requiresReview);entry.items=entry.items.map(function(i){return Object.assign({id:rid(),barcode:'',size:'',category:'أخرى'},i)});entry.source=entry.source||'مُنقولة من راصد السابق';
+ var k=seeds.findIndex(function(x){return x.date===entry.date&&x.invoiceNo&&entry.invoiceNo&&String(x.invoiceNo)===String(entry.invoiceNo)});
+ if(k>=0)seeds[k]=entry;else seeds.push(entry);legacyCount++})}}
+ catch(e){console.warn('تعذر استيراد البيانات القديمة؛ أُبقيت فواتير البداية',e)}
+ return {version:2,createdAt:today(),monthlyBudget:budget,receipts:seeds,legacyImported:legacyCount}}
 function loadDB(){var raw=null,parsed=null;try{raw=localStorage.getItem(STORE_KEY);if(raw)parsed=JSON.parse(raw)}catch(e){writeLocked=true;alert('تعذر قراءة التخزين المحلي. لن نكتب فوقه.');return initial()}if(parsed&&Array.isArray(parsed.receipts))return parsed;if(raw){writeLocked=true;alert('هناك بيانات محلية غير صالحة. أوقفنا الحفظ حفاظًا عليها.');return initial()}var fresh=initial();try{localStorage.setItem(STORE_KEY,JSON.stringify(fresh))}catch(e){writeLocked=true;alert('تعذر حفظ البيانات محليًا. استخدم متصفحًا يسمح بالتخزين.')}return fresh}
 var db=loadDB();
 function persist(){if(writeLocked){alert('الحفظ متوقف لحماية السجل.');return false}try{var old=localStorage.getItem(STORE_KEY);if(old)localStorage.setItem(SNAP_KEY,old);localStorage.setItem(STORE_KEY,JSON.stringify(db));return true}catch(e){alert('تعذر الحفظ. نزّل نسخة احتياطية وتحقق من مساحة المتصفح.');return false}}
