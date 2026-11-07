@@ -34,7 +34,7 @@ function mergeBackup(raw){
 function exportOne(id){var r=receipts().find(function(x){return x.id===id});if(r)downloadFile('receipt-'+(r.invoiceNo||r.date)+'.json',JSON.stringify(r,null,2))}
 function undoLast(){var old=localStorage.getItem(SNAP_KEY);if(!old)return alert('لا تتوفر نسخة محلية سابقة');if(!confirm('استعادة الحالة السابقة؟ يُفضّل تنزيل نسخة احتياطية أولًا.'))return;try{var previous=JSON.parse(old);if(!Array.isArray(previous.receipts))throw Error('صيغة النسخة غير صحيحة');var current=copy(db);db=previous;ensureCatalog();if(!persist()){db=current;return}draw();notify('استعيدت الحالة السابقة')}catch(e){alert(e.message)}}
 function emptyLine(){return {id:rid(),productId:'',name:'',category:'أخرى',barcode:'',quantity:1,unit:'حبة',unitPrice:0,total:0}}
-function nowTime(){return new Date().toTimeString().slice(0,5)}
+function nowTime(){return new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Riyadh',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date())}
 function emptyPurchase(){return {id:rid(),store:'',branch:'',date:today(),time:nowTime(),invoiceNo:'',subtotal:0,vat:0,total:0,notes:'',source:'إدخال يدوي',review:false,items:[]}}
 function persistManualDraft(){if(!entry)return;try{localStorage.setItem(MANUAL_DRAFT_KEY,JSON.stringify({entry:entry,activeLine:activeLine,editLine:editLine,pinned:entryPinned}))}catch(e){}}
 function restoreManualDraft(){
