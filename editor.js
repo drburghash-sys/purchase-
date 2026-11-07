@@ -1,44 +1,200 @@
-
+/* راصد المشتريات — الإدخال اليدوي ودليل الأصناف. لا يحتاج تصوير الفاتورة. */
 'use strict';
-var pendingText='';
-function downloadFile(filename,content,mime){var blob=new Blob([content],{type:mime||'application/json;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(url)},1000)}
-function downloadBackup(){downloadFile('rasid-complete-backup-'+today()+'.json',JSON.stringify(db,null,2),'application/json;charset=utf-8');notify('تم تجهيز النسخة الاحتياطية للتنزيل')}
-function csvExport(){var rows=[['التاريخ','المتجر','الفرع','رقم الفاتورة','الصنف','الباركود','الفئة','الكمية','سعر الوحدة','إجمالي البند','ضريبة الفاتورة','إجمالي الفاتورة']];receipts().forEach(function(r){(r.items||[]).forEach(function(i){rows.push([r.date,r.store,r.branch,r.invoiceNo,i.name,i.barcode,i.category,i.quantity,i.unitPrice,i.total,r.vat,r.total])})});var csv='\ufeff'+rows.map(function(row){return row.map(function(x){return '"'+String(x==null?'':x).replace(/"/g,'""')+'"'}).join(',')}).join('\r\n');downloadFile('rasid-products-'+today()+'.csv',csv,'text/csv;charset=utf-8')}
-function categoryGuess(c){if(CATS.includes(c))return c;var txt=norm(c);if(txt.includes('خضر')||txt.includes('فواكه'))return 'خضار وفواكه';if(txt.includes('البان')||txt.includes('جبن')||txt.includes('اجبان'))return 'ألبان وأجبان';if(txt.includes('مخبوز'))return 'مخبوزات';if(txt.includes('معلب'))return 'معلبات';if(txt.includes('مشروب'))return 'مشروبات';return 'أخرى'}
-function parseReceipt(raw){var obj=typeof raw==='string'?JSON.parse(raw.trim().replace(/^\u0060{3}(json)?\s*/i,'').replace(/\s*\u0060{3}$/,'')):raw;if(!obj||typeof obj!=='object'||Array.isArray(obj))throw Error('يجب أن يكون المحتوى كائن فاتورة JSON');if(Array.isArray(obj.receipts))throw Error('هذا ملف نسخة احتياطية؛ استورده من الإعدادات');var products=obj.items||obj.products||obj.lines;if(!Array.isArray(products))throw Error('لا توجد قائمة items للأصناف');var r={id:obj.id||rid(),store:String(obj.store||obj.merchant||obj.shop||'غير واضح').trim(),branch:String(obj.branch||''),date:String(obj.date||today()).slice(0,10),invoiceNo:String(obj.invoiceNo||obj.invoice_no||''),subtotal:round3(val(obj.subtotal==null?obj.beforeTax:obj.subtotal)),vat:round3(val(obj.vat==null?obj.tax:obj.vat)),total:round3(val(obj.total==null?obj.grandTotal:obj.total)),source:String(obj.source||'ChatGPT JSON'),notes:String(obj.notes||''),review:false,items:products.map(function(p){var qty=val(p.quantity==null?p.qty:p.quantity)||1,total=p.total!=null?val(p.total):p.lineTotal!=null?val(p.lineTotal):round3(qty*val(p.unitPrice==null?p.price:p.unitPrice)),u=p.unitPrice!=null?val(p.unitPrice):p.unit_price!=null?val(p.unit_price):p.price!=null?val(p.price):round3(total/qty);return {id:p.id||rid(),name:String(p.name||p.product||p.description||'غير واضح').trim(),barcode:String(p.barcode||p.ean||''),size:String(p.size||''),category:categoryGuess(p.category),quantity:qty,unitPrice:round3(u),total:round3(total)}})};if(!r.total&&r.items.length)r.total=add(r.items,function(i){return i.total});if(!r.subtotal&&r.total)r.subtotal=round3(r.total-r.vat);r.review=!!obj.review||r.items.some(function(i){return i.name==='غير واضح'})||Math.abs(diff(r))>.009;return r}
-function prepareBackups(o){if(!o||!Array.isArray(o.receipts))throw Error('الملف ليس نسخة احتياطية تحتوي receipts');return o.receipts.map(function(r){var itemObj=copy(r);if(!Array.isArray(itemObj.items))itemObj.items=[];itemObj.items=itemObj.items.map(function(i){return {id:i.id||rid(),name:String(i.name||'غير واضح'),barcode:String(i.barcode||''),size:String(i.size||''),quantity:val(i.quantity)||1,unitPrice:round3(val(i.unitPrice)),total:round3(val(i.total)),category:categoryGuess(i.category)}});itemObj.id=itemObj.id||rid();itemObj.store=String(itemObj.store||'غير واضح');itemObj.branch=String(itemObj.branch||'');itemObj.date=String(itemObj.date||today()).slice(0,10);itemObj.invoiceNo=String(itemObj.invoiceNo||'');itemObj.total=round3(val(itemObj.total));itemObj.vat=round3(val(itemObj.vat));itemObj.subtotal=round3(val(itemObj.subtotal));return itemObj})}
-function distinctInvoice(r){return [r.date||'',r.invoiceNo||'',norm(r.store||''),r.invoiceNo?'':round3(r.total)].join('|')}
-function mergeBackup(raw){var parsed=JSON.parse(raw),incoming=prepareBackups(parsed);if(!incoming.length)return alert('النسخة لا تحتوي على فواتير');var known=new Set(receipts().map(distinctInvoice)),fresh=incoming.filter(function(x){return !known.has(distinctInvoice(x))});if(!fresh.length){alert('كل الفواتير في الملف موجودة بالفعل، ولم نغيّر شيئًا.');return}if(!confirm('سيُضاف '+fresh.length+' فاتورة جديدة دون استبدال الفواتير الحالية. هل توافق؟'))return;var prev=copy(db);db.receipts=db.receipts.concat(fresh);if(db.monthlyBudget===0&&val(parsed.monthlyBudget)>0)db.monthlyBudget=val(parsed.monthlyBudget);if(!persist()){db=prev;return}page='receipts';draw();notify('أضيفت '+fresh.length+' فاتورة، وحُفظت الفواتير السابقة')}
-function drawerFrame(titleText,description,body,footer){return '<div class="sheet"><div class="sheet-head"><div class="between"><div><h2>'+h(titleText)+'</h2><p>'+h(description)+'</p></div>'+btn('إغلاق ✕','closeDrawer','secondary small')+'</div></div><div class="sheet-body">'+body+'</div><div class="sheet-foot">'+footer+'</div></div>'}
-function openDrawer(mode){activeDrawer=mode;drawer.hidden=false;document.body.style.overflow='hidden';renderDrawer();drawer.scrollTop=0}
-function closeDrawer(){drawer.hidden=true;drawer.innerHTML='';document.body.style.overflow='';draft=null;activeDrawer=''}
-function openImport(){pendingText='';draft=null;openDrawer('import')}
-function openEditor(r){draft=copy(r);openItems=new Set((draft.items||[]).filter(function(i){return !i.name||norm(i.name).includes('غير واضح')}).map(function(i){return i.id}));openDrawer('editor')}
-function newEmpty(){draft={id:rid(),store:'',branch:'',date:today(),invoiceNo:'',subtotal:0,vat:0,total:0,source:'إدخال يدوي',notes:'',review:true,items:[{id:rid(),name:'',barcode:'',category:'أخرى',quantity:1,unitPrice:0,total:0}]};openItems=new Set([draft.items[0].id]);openDrawer('editor')}
-function itemCard(i,n){var opened=openItems.has(i.id),unknown=!i.name||norm(i.name).includes('غير واضح');var heading='<div class="item-head"><div class="item-title"><span class="item-index">'+(n+1)+'</span><div><div class="item-name">'+h(i.name||'اكتب اسم الصنف')+'</div><div class="item-summary">'+fmt(i.quantity,3)+' × '+fmt(i.unitPrice,3)+' = '+fmt(i.total,3)+' ر.س</div></div></div>'+btn(opened?'إخفاء':'تصحيح','toggleItem','secondary small','data-id="'+h(i.id)+'"')+'</div>';var fields='<div class="item-details">'+field('اسم الصنف وحجم العبوة','name',i.name,'text','data-itemfield="name" data-index="'+n+'"')+'<div class="item-grid">'+field('الكمية','quantity',i.quantity,'number','min="0.001" step="any" data-itemfield="quantity" data-index="'+n+'"')+field('سعر الوحدة (من الفاتورة)','unitPrice',i.unitPrice,'number','min="0" step="any" data-itemfield="unitPrice" data-index="'+n+'"')+field('الإجمالي شامل الضريبة','total',i.total,'number','min="0" step="any" data-itemfield="total" data-index="'+n+'"')+'</div><div class="twocol" style="margin-top:9px">'+field('الباركود','barcode',i.barcode||'','text','data-itemfield="barcode" data-index="'+n+'"')+'<div class="field"><label>الفئة</label><select data-itemfield="category" data-index="'+n+'">'+CATS.map(function(c){return '<option '+(c===i.category?'selected':'')+'>'+h(c)+'</option>'}).join('')+'</select></div></div><div class="between pull"><span class="hint">لا تُعدّل قيمة الضريبة تلقائيًا.</span>'+btn('حذف هذا السطر','removeItem','danger small','data-index="'+n+'"')+'</div></div>';return '<div class="item-card '+(unknown?'warn ':'')+(opened?'':'item-compact')+'">'+heading+fields+'</div>'}
-function editorBody(){var difference=diff(draft),warning=Math.abs(difference)>=.01,vatDiff=round3(val(draft.total)-val(draft.subtotal)-val(draft.vat)),unknown=(draft.items||[]).filter(function(i){return !i.name||norm(i.name).includes('غير واضح')}).length;return '<div class="alert info">راجع البيانات قبل اعتمادها. كل سطر مستقل، ويمكن فتح «تصحيح» فقط للصنف المطلوب دون جدول عريض.</div>'+
- box('<h3>بيانات الفاتورة</h3><div class="twocol">'+field('المتجر','store',draft.store,'text','data-docfield="store"')+field('الفرع','branch',draft.branch,'text','data-docfield="branch"')+field('التاريخ','date',draft.date,'date','data-docfield="date"')+field('رقم الفاتورة','invoiceNo',draft.invoiceNo,'text','data-docfield="invoiceNo"')+'</div><div class="editor-totals pull">'+field('قبل الضريبة','subtotal',draft.subtotal,'number','step="any" data-docfield="subtotal"')+field('الضريبة المكتوبة','vat',draft.vat,'number','step="any" data-docfield="vat"')+field('إجمالي الفاتورة','total',draft.total,'number','step="any" data-docfield="total"')+'</div><div class="field pull"><label>ملاحظات</label><textarea data-docfield="notes">'+h(draft.notes||'')+'</textarea></div>')+
- '<div class="space"></div>'+box('<div class="between"><div><h3>أصناف الفاتورة ('+draft.items.length+')</h3><span class="hint">المجموع المستخرج: '+fmt(add(draft.items,function(i){return i.total}),3)+' ر.س</span></div><div class="mini-toolbar">'+btn('فتح الكل','expandAll','secondary small')+btn('طي الكل','collapseAll','secondary small')+'</div></div>'+(warning?'<div class="alert bad">فرق بين مجموع البنود والإجمالي المطبوع: '+fmt(difference,3)+' ريال. لا نغيّر الإجمالي المطبوع تلقائيًا.</div>':'')+(Math.abs(vatDiff)>=.01?'<div class="alert">قبل الضريبة + الضريبة لا يطابق إجمالي الفاتورة، الفرق: '+fmt(vatDiff,3)+' ريال.</div>':'')+(unknown?'<div class="alert">'+unknown+' اسم صنف غير واضح يحتاج مراجعة.</div>':'')+draft.items.map(itemCard).join('')+btn('＋ إضافة صنف','addItem','secondary')+
- '<div class="space"></div><div class="alert info">لتصحيح سعر سلعة موزونة: يمكنك تعديل سعر الوحدة والإجمالي كلٍّ على حدة؛ لا يعاد حساب الإجمالي إلا عندما تغير الكمية أو سعر الوحدة.</div>')+
- '<div class="space"></div>'+((draft.id&&receipts().some(function(r){return r.id===draft.id}))?btn('حذف الفاتورة بالكامل','deleteReceipt','danger'):'') }
-function importBody(){return box('<h3>إدخال بيانات الفاتورة</h3><p>الصق JSON كاملًا أو اختر ملفًا. لن يُحفظ أي شيء قبل أن تراجع البنود وتضغط «اعتماد الفاتورة».</p><div class="field"><label>اختر ملف الفاتورة JSON</label><input id="invoiceFile" type="file" accept=".json,application/json"></div><div class="field pull"><label>أو ألصق JSON من ChatGPT</label><textarea id="invoiceJSON" rows="12" placeholder="ألصق نص الفاتورة هنا">'+h(pendingText)+'</textarea></div><p class="hint">ملف النسخ الاحتياطي الكامل يُستورد من الإعدادات، أما هنا فتُقرأ فاتورة واحدة للمراجعة.</p>')}
-function renderDrawer(){if(!activeDrawer)return;var y=drawer.scrollTop;if(activeDrawer==='import')drawer.innerHTML=drawerFrame('قراءة فاتورة','المرحلة 1: استيراد البيانات',importBody(),btn('فاتورة يدوية','newEmpty','secondary')+btn('قراءة ومراجعة','readJSON','primary'));else drawer.innerHTML=drawerFrame('مراجعة الفاتورة','المرحلة 2: تصحيح كل صنف على شاشة الجوال',editorBody(),btn('إلغاء','closeDrawer','secondary')+btn('اعتماد الفاتورة','saveReceipt','primary'));drawer.scrollTop=y}
-function applyEdit(el){if(!draft)return;var doc=el.dataset.docfield,it=el.dataset.itemfield;if(doc){draft[doc]=['subtotal','total','vat'].includes(doc)?round3(val(el.value)):el.value}else if(it){var idx=Number(el.dataset.index),i=draft.items[idx];if(!i)return;var number=['quantity','unitPrice','total'].includes(it);i[it]=number?round3(val(el.value)):el.value;if(it==='quantity'||it==='unitPrice')i.total=round3(val(i.quantity)*val(i.unitPrice));if(it==='total'&&val(i.quantity))i.unitPrice=round3(val(i.total)/val(i.quantity))}}
-function saveReceipt(){if(!draft)return;var r=copy(draft);if(!r.store.trim())return alert('أدخل اسم المتجر، أو اكتب غير واضح');if(!/^\d{4}-\d{2}-\d{2}$/.test(r.date))return alert('التاريخ مطلوب بصيغة صحيحة');if(r.total<=0)return alert('يجب إدخال إجمالي الفاتورة');if(!r.items.length||r.items.some(function(i){return !i.name.trim()||i.quantity<=0||i.total<0}))return alert('توجد أصناف بلا أسماء أو كميات صالحة');var delta=diff(r),taxDiff=round3(r.total-r.subtotal-r.vat);if(Math.abs(delta)>=.01||Math.abs(taxDiff)>=.01){if(!confirm('هناك فرق بين الأرقام المطبوعة والبنود أو الضريبة. سيُحفظ دون تغيير الأرقام، هل توافق؟'))return}var duplicate=receipts().some(function(x){return x.id!==r.id&&distinctInvoice(x)===distinctInvoice(r)});if(duplicate)return alert('الفاتورة موجودة بالفعل. افتحها من أرشيف الفواتير لتعديلها.');r.review=r.items.some(function(i){return norm(i.name).includes('غير واضح')})||Math.abs(delta)>=.01;r.items.forEach(function(i){i.category=categoryGuess(i.category);i.quantity=round3(i.quantity);i.unitPrice=round3(i.unitPrice);i.total=round3(i.total)});var before=copy(db),idx=receipts().findIndex(function(x){return x.id===r.id});if(idx<0)db.receipts.push(r);else db.receipts[idx]=r;if(!persist()){db=before;return}closeDrawer();page='receipts';draw();notify('حُفظت الفاتورة مع جميع الأصناف دون مسح غيرها')}
-function exportOne(id){var r=receipts().find(function(x){return x.id===id});if(r)downloadFile('invoice-'+(r.invoiceNo||r.date)+'.json',JSON.stringify(r,null,2))}
-function undoLast(){var s=localStorage.getItem(SNAP_KEY);if(!s)return alert('لا توجد حالة سابقة محفوظة');if(!confirm('هل تستعيد الحالة السابقة من هذا المتصفح؟ سيتم نقل الحالة الحالية إلى لقطة سابقة لاسترجاعها عند الحاجة.'))return;try{var obj=JSON.parse(s);if(!Array.isArray(obj.receipts))throw Error('حالة غير صالحة');var now=copy(db);db=obj;if(!persist()){db=now;return}draw();notify('استعيدت النسخة السابقة')}catch(e){alert('تعذر الاسترجاع: '+e.message)}}
-root.addEventListener('input',function(e){var t=e.target;if(t.id==='invoiceSearch'){searchText=t.value;receiptResults()}});
-root.addEventListener('change',async function(e){var t=e.target;if(t.name==='monthFilter'){monthFilter=t.value;draw()}else if(t.name==='productSelect'){selectedProduct=t.value;draw()}else if(t.id==='searchProducts'){prodSearch=t.value;selectedProduct='';draw()}else if(t.id==='restoreFile'&&t.files&&t.files[0]){try{await mergeBackup(await t.files[0].text())}catch(err){alert('تعذر قراءة نسخة البيانات: '+err.message)}t.value=''}});
-root.addEventListener('click',function(e){var b=e.target.closest('[data-action]');if(!b)return;var action=b.dataset.action,id=b.dataset.id;if(action==='import')openImport();if(action==='edit'){var r=receipts().find(function(x){return x.id===id});if(r)openEditor(r)}if(action==='oneExport')exportOne(id);if(action==='backup')downloadBackup();if(action==='csv')csvExport();if(action==='saveBudget'){var node=document.getElementById('monthlyBudget'),amount=val(node.value);if(amount<0)return alert('الميزانية لا يمكن أن تكون سالبة');var old=db.monthlyBudget;db.monthlyBudget=round3(amount);if(!persist()){db.monthlyBudget=old;return}draw();notify('حُفظت الميزانية وتُرحّل الأرصدة تلقائيًا')}if(action==='undo')undoLast()});
-drawer.addEventListener('input',function(e){var t=e.target;if(t.id==='invoiceJSON')pendingText=t.value;else if(t.dataset.docfield||t.dataset.itemfield)applyEdit(t)});
-drawer.addEventListener('change',async function(e){var t=e.target;if(t.id==='invoiceFile'&&t.files&&t.files[0]){try{pendingText=await t.files[0].text();renderDrawer();notify('تمت قراءة الملف؛ اضغط قراءة ومراجعة')}catch(err){alert('الملف غير مقروء')}}else if(t.dataset.docfield||t.dataset.itemfield){applyEdit(t);renderDrawer()}});
-drawer.addEventListener('click',function(e){if(e.target===drawer){closeDrawer();return}var b=e.target.closest('[data-action]');if(!b)return;var a=b.dataset.action;if(a==='closeDrawer')closeDrawer();
-else if(a==='newEmpty')newEmpty();
-else if(a==='readJSON'){try{var obj=JSON.parse(pendingText.trim().replace(/^\u0060{3}(json)?\s*/i,'').replace(/\s*\u0060{3}$/,''));if(obj&&Array.isArray(obj.receipts))throw Error('هذه نسخة احتياطية؛ استخدم الاستعادة من الإعدادات');openEditor(parseReceipt(obj))}catch(err){alert('تعذر قراءة JSON: '+err.message)}}
-else if(a==='toggleItem'){var id=b.dataset.id;if(openItems.has(id))openItems.delete(id);else openItems.add(id);renderDrawer()}
-else if(a==='expandAll'){draft.items.forEach(function(i){openItems.add(i.id)});renderDrawer()}
-else if(a==='collapseAll'){openItems.clear();renderDrawer()}
-else if(a==='addItem'){var i={id:rid(),name:'',barcode:'',size:'',category:'أخرى',quantity:1,unitPrice:0,total:0};draft.items.push(i);openItems.add(i.id);renderDrawer()}
-else if(a==='removeItem'){var index=Number(b.dataset.index);if(confirm('حذف هذا الصنف من مسودة الفاتورة؟')){draft.items.splice(index,1);renderDrawer()}}
-else if(a==='saveReceipt')saveReceipt();
-else if(a==='deleteReceipt'){if(!draft||!receipts().some(function(r){return r.id===draft.id}))return;if(confirm('هل تريد حذف الفاتورة؟ سيُنزّل البرنامج نسخة احتياطية أولًا.')&&confirm('تأكيد نهائي: حذف الفاتورة '+draft.invoiceNo+'؟')){downloadBackup();var old=copy(db);db.receipts=db.receipts.filter(function(r){return r.id!==draft.id});if(!persist()){db=old;return}closeDrawer();page='receipts';draw();notify('حُذفت الفاتورة مع الاحتفاظ بنسخة احتياطية')}}});
+var MANUAL_DRAFT_KEY='rasid-manual-inprogress-v1',entry=null,activeLine=null,editLine=-1,entryPinned=false;
+var UNITS=['حبة','عبوة','كجم','جرام','لتر','مل','متر','دزينة'];
+function downloadFile(filename,content,type){
+ var blob=new Blob([content],{type:type||'application/json;charset=utf-8'}),url=URL.createObjectURL(blob),link=document.createElement('a');
+ link.href=url;link.download=filename;document.body.appendChild(link);link.click();link.remove();setTimeout(function(){URL.revokeObjectURL(url)},1200)
+}
+function downloadBackup(){downloadFile('rasid-full-backup-'+today()+'.json',JSON.stringify(db,null,2));notify('تم طلب تنزيل النسخة الاحتياطية بكل الفواتير والمسميات')}
+function csvExport(){
+ var rows=[['التاريخ','الوقت','المتجر','رقم الفاتورة','الصنف المعتمد','اسم السطر الأصلي','الكمية','الوحدة','سعر الوحدة','الإجمالي شامل الضريبة','ضريبة الفاتورة','إجمالي الفاتورة']];
+ receipts().forEach(function(r){(r.items||[]).forEach(function(i){rows.push([r.date,r.time||'',r.store,r.invoiceNo,itemName(i),i.name,i.quantity,i.unit||'',i.unitPrice,i.total,r.vat,r.total])})});
+ downloadFile('rasid-purchases-'+today()+'.csv','\ufeff'+rows.map(function(row){return row.map(function(v){return '"'+String(v==null?'':v).replace(/"/g,'""')+'"'}).join(',')}).join('\r\n'),'text/csv;charset=utf-8')
+}
+function distinctInvoice(r){return r.invoiceNo?norm(r.store)+'|'+r.date+'|'+String(r.invoiceNo):'id:'+r.id}
+function mergeBackup(raw){
+ var data=JSON.parse(raw);if(!data||!Array.isArray(data.receipts))throw Error('ملف النسخة الاحتياطية غير صالح');
+ var before=copy(db),added=0,known=new Set(receipts().map(distinctInvoice)),remap={};
+ if(Array.isArray(data.catalog))data.catalog.forEach(function(p){
+  var current=(db.catalog||[]).find(function(x){return norm(x.name)===norm(p.name)});
+  if(current)remap[p.id]=current.id;
+  else if(p.name&&!(db.catalog||[]).some(function(x){return x.id===p.id})){var cp=copy(p);cp.id='p-'+rid();db.catalog.push(cp);remap[p.id]=cp.id}
+ });
+ data.receipts.forEach(function(r){
+  if(!r||!Array.isArray(r.items)||!/^\d{4}-\d{2}-\d{2}$/.test(r.date||''))return;
+  if(known.has(distinctInvoice(r)))return;
+  var cp=copy(r);cp.id=rid();cp.items.forEach(function(i){i.id=i.id||rid();if(i.productId&&remap[i.productId])i.productId=remap[i.productId]});
+  db.receipts.push(cp);known.add(distinctInvoice(r));added++;
+ });
+ if(!added){db=before;notify('جميع الفواتير الموجودة في الملف مسجلة بالفعل');return}
+ if(!confirm('سيُضاف '+added+' فاتورة دون حذف الموجود، هل توافق؟')){db=before;return}
+ ensureCatalog();if(!persist()){db=before;return}page='receipts';draw();notify('أضيفت '+added+' فاتورة دون فقد الفواتير السابقة')
+}
+function exportOne(id){var r=receipts().find(function(x){return x.id===id});if(r)downloadFile('receipt-'+(r.invoiceNo||r.date)+'.json',JSON.stringify(r,null,2))}
+function undoLast(){var old=localStorage.getItem(SNAP_KEY);if(!old)return alert('لا تتوفر نسخة محلية سابقة');if(!confirm('استعادة الحالة السابقة؟ يُفضّل تنزيل نسخة احتياطية أولًا.'))return;try{var previous=JSON.parse(old);if(!Array.isArray(previous.receipts))throw Error('صيغة النسخة غير صحيحة');var current=copy(db);db=previous;ensureCatalog();if(!persist()){db=current;return}draw();notify('استعيدت الحالة السابقة')}catch(e){alert(e.message)}}
+function emptyLine(){return {id:rid(),productId:'',name:'',category:'أخرى',barcode:'',quantity:1,unit:'حبة',unitPrice:0,total:0}}
+function nowTime(){return new Date().toTimeString().slice(0,5)}
+function emptyPurchase(){return {id:rid(),store:'',branch:'',date:today(),time:nowTime(),invoiceNo:'',subtotal:0,vat:0,total:0,notes:'',source:'إدخال يدوي',review:false,items:[]}}
+function persistManualDraft(){if(!entry)return;try{localStorage.setItem(MANUAL_DRAFT_KEY,JSON.stringify({entry:entry,activeLine:activeLine,editLine:editLine,pinned:entryPinned}))}catch(e){}}
+function restoreManualDraft(){
+ try{var data=JSON.parse(localStorage.getItem(MANUAL_DRAFT_KEY)||'null');return data&&data.entry&&Array.isArray(data.entry.items)?data:null}catch(e){return null}
+}
+function openManualNew(){
+ var saved=restoreManualDraft();
+ if(saved&&confirm('وجدت عملية شراء غير مكتملة. هل تريد مواصلة إدخالها؟')){entry=saved.entry;activeLine=saved.activeLine||emptyLine();editLine=Number.isInteger(saved.editLine)?saved.editLine:-1;entryPinned=!!saved.pinned}
+ else {entry=emptyPurchase();activeLine=emptyLine();editLine=-1;entryPinned=false;persistManualDraft()}
+ openManualDrawer()
+}
+function openManualEdit(r){
+ if(!r)return;entry=copy(r);entry.time=entry.time||'';activeLine=emptyLine();editLine=-1;entryPinned=true;persistManualDraft();openManualDrawer()
+}
+function openEditor(r){openManualEdit(r)}
+function openImport(){openManualNew()}
+function closeManual(){drawer.hidden=true;drawer.innerHTML='';document.body.style.overflow='';entry=null;activeLine=null;editLine=-1}
+function openManualDrawer(){drawer.hidden=false;document.body.style.overflow='hidden';renderManual();drawer.scrollTop=0}
+function manualHead(){var knownStores=shops();return '<div class="twocol">'+
+ field('اسم المتجر','store',entry.store,'text','data-purchase="store" list="knownStores" placeholder="اختر متجرًا سابقًا أو اكتب متجرًا جديدًا"')+
+ '<datalist id="knownStores">'+knownStores.map(function(s){return '<option value="'+h(s)+'"></option>'}).join('')+'</datalist>'+
+ field('الفرع (اختياري)','branch',entry.branch,'text','data-purchase="branch"')+
+ field('التاريخ','date',entry.date,'date','data-purchase="date"')+
+ field('الوقت','time',entry.time||'','time','data-purchase="time"')+
+ field('رقم الفاتورة (اختياري)','invoiceNo',entry.invoiceNo,'text','data-purchase="invoiceNo"')+'</div>'}
+function suggestions(text){
+ var q=norm(text),p=canonicalList();
+ if(q)p=p.filter(function(x){return norm(x.name).includes(q)});
+ return p.slice(0,9).map(function(x){return '<button type="button" class="manual-option" data-pickproduct="'+h(x.id)+'"><strong>'+h(x.name)+'</strong><small>'+h(x.unit||'حبة')+' • '+h(x.category||'أخرى')+'</small></button>'}).join('')||(q?'<p class="hint">اسم جديد؛ سيُحفظ في دليل الأصناف عند اعتماد الشراء.</p>':'<p class="hint">اكتب جزءًا من الاسم أو اختر من مسمياتك المحفوظة.</p>')
+}
+function itemInput(){return '<div class="manual-item-form">'+
+ '<div class="field"><label>اسم الصنف — اكتب أو اختر اسمًا محفوظًا</label><input id="activeProductName" autocomplete="off" value="'+h(activeLine.name)+'" placeholder="مثال: تونة 80 جرام" data-line="name"></div>'+
+ '<div id="manualSuggestions" class="manual-suggestions">'+suggestions(activeLine.name)+'</div>'+
+ '<div class="grid cols2">'+
+ options('unit','نوع الكمية أو الوزن',activeLine.unit,UNITS.map(function(x){return [x,x]})).replace('name="unit"','name="unit" data-line="unit"')+
+ field('عدد الحبات أو الوزن','quantity',activeLine.quantity,'number','data-line="quantity" min="0.001" step="any"')+
+ field('سعر الوحدة / الكيلو','unitPrice',activeLine.unitPrice,'number','data-line="unitPrice" min="0" step="any"')+
+ field('الإجمالي لهذا الصنف','total',activeLine.total,'number','data-line="total" min="0" step="any"')+
+ '</div><p class="hint">إذا غيّرت الكمية أو السعر يُحسب الإجمالي تلقائيًا، ويمكنك تعديل الإجمالي كما هو مطبوع.</p>'+
+ '<div class="between">'+(editLine>=0?btn('إلغاء تعديل الصنف','cancelLine','secondary'):'<span></span>')+
+ btn(editLine>=0?'تحديث الصنف':'إضافة الصنف ثم التالي ＋','commitLine','primary')+'</div></div>'}
+function manualRows(){return entry.items.length?entry.items.map(function(i,n){return '<div class="manual-line"><div class="between"><div><strong>'+(n+1)+'. '+h(i.productId&&catalogById(i.productId)?catalogById(i.productId).name:i.name)+'</strong><div class="hint">'+fmt(i.quantity,3)+' '+h(i.unit||'حبة')+' × '+fmt(i.unitPrice,3)+' ر.س</div></div><strong class="money">'+fmt(i.total,3)+' ر.س</strong></div><div class="mini-toolbar">'+btn('تعديل','editLine','secondary small','data-index="'+n+'"')+btn('إزالة','removeLine','danger small','data-index="'+n+'"')+'</div></div>'}).join(''):'<div class="empty">لم تضف أصنافًا بعد. ابدأ بالصنف الأول أعلاه.</div>'}
+function totalsPanel(){var lines=add(entry.items,function(i){return i.total});return '<div class="manual-totalbar"><div class="between"><span>مجموع الأصناف</span><strong id="sumOfLines">'+fmt(lines,3)+' ر.س</strong></div>'+
+ '<div class="grid cols2">'+field('إجمالي الفاتورة شامل الضريبة','total',entry.total,'number','data-purchase="total" step="any" min="0"')+
+ field('ضريبة الفاتورة (من الإيصال)','vat',entry.vat,'number','data-purchase="vat" step="any" min="0"')+'</div>'+
+ '<div class="between"><span>قبل الضريبة (محسوب من الإجمالي والضريبة)</span><strong id="withoutVat">'+fmt(Math.max(0,val(entry.total)-val(entry.vat)),3)+' ر.س</strong></div>'+
+ '<p id="totalDifference" class="hint">فرق مجموع الأصناف والإجمالي: '+fmt(round3(lines-val(entry.total)),3)+' ر.س</p></div>'+
+ '<div class="field pull"><label>ملاحظات (اختياري)</label><textarea data-purchase="notes">'+h(entry.notes||'')+'</textarea></div>'}
+function renderManual(){
+ if(!entry)return;
+ drawer.innerHTML='<div class="sheet manual-sheet"><div class="sheet-head"><div class="between"><div><h2>شراء جديد — إدخال يدوي</h2><p>الأصناف تُضاف واحدة بعد الأخرى، وتُحفظ مسمياتها للاستخدام القادم.</p></div>'+btn('إغلاق','manualClose','secondary small')+'</div></div>'+
+ '<div class="sheet-body">'+
+ box('<h3>1. معلومات الشراء</h3>'+manualHead())+
+ '<div class="space"></div>'+box('<h3>2. '+(editLine>=0?'تعديل صنف':'إضافة صنف')+'</h3>'+itemInput())+
+ '<div class="space"></div>'+box('<h3>3. الأصناف المسجلة ('+entry.items.length+')</h3><div id="manualLines">'+manualRows()+'</div>')+
+ '<div class="space"></div>'+box('<h3>4. إجمالي الفاتورة وضريبتها</h3>'+totalsPanel())+
+ '<div class="alert info">لا نضيف الضريبة على الأسعار مرة ثانية؛ أسعار الأصناف تُسجل شاملة للضريبة كما في الفاتورة.</div></div>'+
+ '<div class="sheet-foot">'+btn('حفظ الشراء كاملًا','manualSave','primary')+btn('إغلاق مع حفظ المسودة','manualClose','secondary')+'</div></div>'
+}
+function renderSuggestionList(){var node=document.getElementById('manualSuggestions');if(node)node.innerHTML=suggestions(activeLine.name)}
+function updateTotalPreview(){if(!entry)return;var v=document.getElementById('withoutVat'),d=document.getElementById('totalDifference'),lines=add(entry.items,function(i){return i.total});if(v)v.textContent=fmt(Math.max(0,val(entry.total)-val(entry.vat)),3)+' ر.س';if(d)d.textContent='فرق مجموع الأصناف والإجمالي: '+fmt(round3(lines-val(entry.total)),3)+' ر.س'}
+function manualChangeField(node){
+ var k=node.dataset.purchase,l=node.dataset.line;
+ if(k){entry[k]=['total','vat'].includes(k)?round3(val(node.value)):node.value;if(k==='total')entryPinned=true;updateTotalPreview()}
+ if(l){activeLine[l]=['total','quantity','unitPrice'].includes(l)?round3(val(node.value)):node.value;
+  if(l==='name'){var old=activeLine.productId&&catalogById(activeLine.productId);if(old&&norm(old.name)!==norm(activeLine.name))activeLine.productId='';renderSuggestionList()}
+  if(l==='quantity'||l==='unitPrice'){activeLine.total=round3(val(activeLine.quantity)*val(activeLine.unitPrice));var totalInput=drawer.querySelector('input[data-line="total"]');if(totalInput)totalInput.value=activeLine.total}
+ }
+ persistManualDraft()
+}
+function productMatch(item){if(item.productId&&catalogById(item.productId))return catalogById(item.productId);return (db.catalog||[]).find(function(x){return norm(x.name)===norm(item.name)})}
+function commitLine(){
+ var name=String(activeLine.name||'').trim();if(!name)return alert('اكتب اسم الصنف أو اختره من القائمة');
+ if(!Number.isFinite(val(activeLine.quantity))||val(activeLine.quantity)<=0)return alert('الكمية أو الوزن يجب أن يكون أكبر من صفر');
+ if(val(activeLine.unitPrice)<0||val(activeLine.total)<0)return alert('أدخل سعرًا صالحًا');
+ var match=productMatch(activeLine);if(match){activeLine.productId=match.id;activeLine.name=match.name;activeLine.category=match.category||'أخرى'}
+ var line=copy(activeLine);
+ if(editLine>=0)entry.items[editLine]=line;else entry.items.push(line);
+ if(!entryPinned)entry.total=add(entry.items,function(i){return i.total});
+ entry.subtotal=round3(val(entry.total)-val(entry.vat));
+ activeLine=emptyLine();editLine=-1;persistManualDraft();renderManual();
+ var node=drawer.querySelector('#activeProductName');if(node){node.focus();node.scrollIntoView({block:'center'})}
+ notify('أضيف الصنف؛ يمكنك إدخال الصنف التالي')
+}
+function doSave(){
+ if(!entry.store.trim())return alert('أدخل اسم المتجر أولًا');
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(entry.date))return alert('التاريخ غير صالح');
+ if(!/^\d{2}:\d{2}$/.test(entry.time||''))return alert('وقت الشراء غير صالح');
+ if(!entry.items.length)return alert('أضف صنفًا واحدًا على الأقل');
+ if(!entry.items.every(function(i){return i.name.trim()&&val(i.quantity)>0&&val(i.total)>=0}))return alert('أكمل أسماء الأصناف والكميات');
+ if(entry.total<=0)return alert('إجمالي الفاتورة يجب أن يكون أكبر من صفر');
+ if(entry.vat<0||entry.vat>entry.total)return alert('الضريبة أكبر من الإجمالي أو غير صالحة');
+ var gap=round3(add(entry.items,function(i){return i.total})-val(entry.total));
+ if(Math.abs(gap)>=.01&&!confirm('مجموع الأصناف يختلف عن إجمالي الفاتورة بـ '+fmt(gap,3)+' ريال. هل تريد الحفظ مع إبقاء الفرق للمراجعة؟'))return;
+ var old=copy(db),out=copy(entry),idx=receipts().findIndex(function(r){return r.id===entry.id});
+ var duplicate=receipts().some(function(r){return r.id!==out.id&&out.invoiceNo&&r.invoiceNo&&norm(r.store)===norm(out.store)&&r.date===out.date&&String(r.invoiceNo)===String(out.invoiceNo)});
+ if(duplicate)return alert('هذه الفاتورة مسجلة بالفعل برقمها وتاريخها ومتجرها');
+ out.items.forEach(function(i){
+  var p=productMatch(i);
+  if(!p){p={id:'p-'+rid(),name:i.name.trim(),unit:i.unit||'حبة',category:i.category||'أخرى'};db.catalog.push(p)}
+  i.productId=p.id;i.name=p.name;i.category=p.category||'أخرى';
+ });
+ out.subtotal=round3(val(out.total)-val(out.vat));out.source=out.source||'إدخال يدوي';out.review=Math.abs(gap)>=.01;
+ if(idx<0)db.receipts.push(out);else db.receipts[idx]=out;
+ if(!persist()){db=old;return}
+ try{localStorage.removeItem(MANUAL_DRAFT_KEY)}catch(e){}
+ closeManual();page='receipts';draw();notify('تم حفظ '+out.items.length+' صنفًا مع الفاتورة وإضافتها للمقارنات')
+}
+function renameCatalog(id){
+ var p=catalogById(id);if(!p)return;var name=prompt('الاسم الموحد لهذا الصنف:',p.name);if(name==null)return;name=name.trim();if(!name)return alert('الاسم لا يمكن أن يكون فارغًا');
+ if((db.catalog||[]).some(function(x){return x.id!==id&&norm(x.name)===norm(name)}))return alert('الاسم موجود بالفعل؛ استخدم دمج مع صنف');
+ var before=copy(db);p.name=name;if(!persist()){db=before;return}draw();notify('تم تعديل الاسم، والربط بالفواتير بقي محفوظًا')
+}
+function mergeCatalog(sourceId){
+ var src=catalogById(sourceId);if(!src)return;var targetName=prompt('اكتب اسم الصنف الآخر الذي تريد الدمج معه. سيبقى الاسم الآخر معتمدًا:',src.name);if(targetName===null)return;
+ var target=db.catalog.find(function(p){return p.id!==src.id&&norm(p.name)===norm(targetName)});
+ if(!target)return alert('الصنف الهدف غير موجود. اختر اسمًا مسجلًا في دليل الأصناف');
+ if(!confirm('دمج «'+src.name+'» في «'+target.name+'»؟ سيُحافظ على الفواتير وأسعارها وتُجمع سجلات المقارنة تحت الاسم المعتمد.'))return;
+ var before=copy(db);receipts().forEach(function(r){(r.items||[]).forEach(function(i){if(i.productId===src.id)i.productId=target.id})});db.catalog=db.catalog.filter(function(p){return p.id!==src.id});
+ if(!persist()){db=before;return}draw();notify('تم دمج المسميات دون حذف أي فاتورة')
+}
+root.addEventListener('input',function(e){
+ if(e.target.id==='invoiceSearch'){searchText=e.target.value;receiptResults()}
+ if(e.target.id==='catalogSearch'){catalogSearch=e.target.value;var node=document.getElementById('catalogResults');if(node)node.innerHTML=catalogRows(canonicalList().filter(function(p){return norm(p.name).includes(norm(catalogSearch))}))}
+});
+root.addEventListener('change',function(e){
+ if(e.target.name==='monthFilter'){monthFilter=e.target.value;draw()}
+ if(e.target.name==='productSelect'){selectedProduct=e.target.value;draw()}
+ if(e.target.id==='searchProducts'){prodSearch=e.target.value;selectedProduct='';draw()}
+ if(e.target.id==='restoreFile'&&e.target.files&&e.target.files[0]){e.target.files[0].text().then(mergeBackup).catch(function(err){alert('تعذر الاستعادة: '+err.message)})}
+});
+root.addEventListener('click',function(e){
+ var b=e.target.closest('[data-action]');if(!b)return;var act=b.dataset.action,id=b.dataset.id;
+ if(act==='manualNew'||act==='import')openManualNew();
+ else if(act==='edit'){var r=receipts().find(function(x){return x.id===id});if(r)openManualEdit(r)}
+ else if(act==='oneExport')exportOne(id);
+ else if(act==='backup')downloadBackup();
+ else if(act==='csv')csvExport();
+ else if(act==='saveBudget'){var old=db.monthlyBudget;db.monthlyBudget=round3(val(document.getElementById('monthlyBudget').value));if(!persist()){db.monthlyBudget=old;return}draw();notify('تم حفظ الميزانية المرحّلة')}
+ else if(act==='undo')undoLast();
+ else if(act==='catalogAdd'){var name=prompt('اسم الصنف المعتمد الجديد:');if(!name||!name.trim())return;name=name.trim();if((db.catalog||[]).some(function(x){return norm(x.name)===norm(name)}))return alert('هذا الصنف مسجل بالفعل');var before=copy(db);db.catalog.push({id:'p-'+rid(),name:name,unit:'حبة',category:'أخرى'});if(!persist()){db=before;return}draw();notify('أُضيف الصنف إلى القائمة')}
+ else if(act==='catalogRename')renameCatalog(id);
+ else if(act==='catalogMerge')mergeCatalog(id);
+});
+drawer.addEventListener('input',function(e){if(!entry)return;var n=e.target;if(n.dataset.purchase||n.dataset.line)manualChangeField(n)});
+drawer.addEventListener('change',function(e){if(!entry)return;var n=e.target;if(n.dataset.purchase||n.dataset.line)manualChangeField(n)});
+drawer.addEventListener('click',function(e){
+ if(e.target===drawer){closeManual();return}
+ var b=e.target.closest('[data-action],[data-pickproduct]');if(!b||!entry)return;
+ if(b.hasAttribute('data-pickproduct')){
+  var p=catalogById(b.dataset.pickproduct);if(!p)return;activeLine.productId=p.id;activeLine.name=p.name;activeLine.unit=p.unit||'حبة';activeLine.category=p.category||'أخرى';
+  var n=drawer.querySelector('#activeProductName');if(n)n.value=p.name;
+  var u=drawer.querySelector('select[data-line="unit"]');if(u)u.value=activeLine.unit;
+  renderSuggestionList();persistManualDraft();return
+ }
+ var act=b.dataset.action;
+ if(act==='manualClose'){persistManualDraft();closeManual();notify('المسودة محفوظة ويمكن إكمالها من شراء جديد')}
+ else if(act==='commitLine')commitLine();
+ else if(act==='cancelLine'){editLine=-1;activeLine=emptyLine();persistManualDraft();renderManual()}
+ else if(act==='editLine'){editLine=Number(b.dataset.index);activeLine=copy(entry.items[editLine]);persistManualDraft();renderManual();var n=drawer.querySelector('#activeProductName');if(n)n.scrollIntoView({block:'center'})}
+ else if(act==='removeLine'){var index=Number(b.dataset.index);if(confirm('حذف هذا الصنف من المسودة؟')){entry.items.splice(index,1);if(!entryPinned)entry.total=add(entry.items,function(i){return i.total});persistManualDraft();renderManual()}}
+ else if(act==='manualSave')doSave();
+});
