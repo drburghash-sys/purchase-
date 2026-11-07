@@ -14,3 +14,29 @@
 .ranked-stores .secondary-rank{background:#eef2f5;color:#53656b}
 .metric .store-name{font-size:17px;white-space:normal;direction:rtl;text-align:right;line-height:1.5;overflow-wrap:anywhere}
 @media(max-width:590px){.ranked-stores .bigprice{font-size:18px}.ranked-stores .compare-store{font-size:16px}}
+
+/* Mobile first manual shopping workflow */
+.manual-sheet .sheet-body>.card{margin-bottom:12px}
+.manual-sheet .manual-item-form{display:grid;gap:12px}
+.manual-suggestions{border:1px solid var(--line);background:#fff;border-radius:12px;overflow:auto;max-height:205px;scrollbar-width:thin}
+.manual-option{width:100%;display:flex;justify-content:space-between;align-items:center;gap:10px;background:#fff;border:0;border-bottom:1px solid #e9eff0;border-radius:0;padding:10px 12px;text-align:right;min-height:42px;color:var(--ink)}
+.manual-option:hover,.manual-option:focus{background:#eaf5f2}
+.manual-option:last-child{border-bottom:0}.manual-option small{color:var(--muted)}
+.manual-suggestions>.hint{padding:8px 12px;margin:0}
+.manual-line{background:#f8fbfb;border:1px solid var(--line);border-radius:12px;padding:12px;margin:9px 0}
+.manual-line .mini-toolbar{margin-top:9px}
+.manual-totalbar{display:grid;gap:12px}
+.manual-totalbar>.between{padding:6px 0}
+.manual-totalbar .field input{font-size:16px}
+.manual-sheet .sheet-foot{gap:7px}
+.manual-sheet .sheet-foot button:first-child{flex:2}
+.manual-sheet .sheet-foot button:last-child{flex:1}
+@media(max-width:600px){
+.manual-sheet .twocol{grid-template-columns:1fr 1fr}
+.manual-sheet .manual-item-form .grid.cols2{grid-template-columns:1fr 1fr}
+.manual-sheet .sheet-head{position:sticky;top:0}
+.manual-sheet .sheet-foot{position:sticky;bottom:0}
+.manual-sheet .manual-option{align-items:flex-start;flex-direction:column;gap:0}
+.manual-sheet .sheet-body{padding-bottom:45px}
+}
+@media(max-width:365px){.manual-sheet .twocol,.manual-sheet .manual-item-form .grid.cols2{grid-template-columns:1fr}}
