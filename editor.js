@@ -109,7 +109,7 @@ function productMatch(item){if(item.productId&&catalogById(item.productId))retur
 function commitLine(){
  var name=String(activeLine.name||'').trim();if(!name){alert('اكتب اسم الصنف أو اختره من القائمة');return false;}
  if(!Number.isFinite(val(activeLine.quantity))||val(activeLine.quantity)<=0){alert('الكمية أو الوزن يجب أن يكون أكبر من صفر');return false;}
- if(val(activeLine.unitPrice)<0||val(activeLine.total)<0){alert('أدخل سعرًا صالحًا');return false;}
+ if(val(activeLine.unitPrice)<0||val(activeLine.total)<0){alert('أدخل سعرًا صالحًا');return false;}if(!val(activeLine.unitPrice)&&val(activeLine.total)>0){activeLine.unitPrice=round3(val(activeLine.total)/val(activeLine.quantity))}
  var match=productMatch(activeLine);if(match){activeLine.productId=match.id;activeLine.name=match.name;activeLine.category=match.category||'أخرى'}
  var line=copy(activeLine);
  if(editLine>=0)entry.items[editLine]=line;else entry.items.push(line);
@@ -123,7 +123,7 @@ function doSave(){
  if(activeLine&&activeLine.name&&activeLine.name.trim()){if(commitLine()===false)return}
  if(!entry.store.trim())return alert('أدخل اسم المتجر أولًا');
  if(!/^\d{4}-\d{2}-\d{2}$/.test(entry.date))return alert('التاريخ غير صالح');
- if(!/^\d{2}:\d{2}$/.test(entry.time||''))return alert('وقت الشراء غير صالح');
+ if(entry.time&&!/^\d{2}:\d{2}$/.test(entry.time))return alert('وقت الشراء غير صالح');
  if(!entry.items.length)return alert('أضف صنفًا واحدًا على الأقل');
  if(!entry.items.every(function(i){return i.name.trim()&&val(i.quantity)>0&&val(i.total)>=0}))return alert('أكمل أسماء الأصناف والكميات');
  if(entry.total<=0)return alert('إجمالي الفاتورة يجب أن يكون أكبر من صفر');
