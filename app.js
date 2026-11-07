@@ -48,8 +48,9 @@ function diff(r){return round3(add(r.items||[],function(i){return i.total})-val(
 function shops(){return [...new Set(receipts().map(function(r){return r.store||'غير معروف'}))].sort(function(a,b){return a.localeCompare(b,'ar')})}
 function norm(t){return String(t||'').normalize('NFKC').replace(/[٠-٩]/g,function(d){return '٠١٢٣٤٥٦٧٨٩'.indexOf(d)}).replace(/[۰-۹]/g,function(d){return '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)}).toLowerCase().replace(/[أإآ]/g,'ا').replace(/[ًٌٍَُِّْـ]/g,'').replace(/[،.\-_/]/g,' ').replace(/\s+/g,' ').trim()}
 function productSignature(name){var words=norm(name).split(' ').filter(Boolean).map(function(w){w=w.length>4&&w.slice(0,2)==='ال'?w.slice(2):w;return w.replace(/ة$/,'ه').replace(/ى$/,'ي')});if(words.includes('لتر')&&!words.some(function(w){return /^\d+$/.test(w)}))words.push('1');return words.sort().join('|')}
-function pkey(i,r){if(i.productId&&catalogById(i.productId))return 'canonical:'+i.productId;var b=String(i.barcode||'').replace(/\D/g,'');if(b.length>=8)return 'barcode:'+b;var name=norm(i.name),size=norm(i.size);return !name||name.includes('غير واضح')?'unknown:'+r.id+':'+i.id:'name:'+productSignature(name)+'|'+productSignature(size)}
-function products(){var map=new Map();receipts().forEach(function(r){(r.items||[]).forEach(function(i){if(!i.name)return;var key=pkey(i,r),p=map.get(key),q=val(i.quantity)||1;if(!p){p={key:key,name:itemName(i),barcode:i.barcode||'',hits:[],spend:0,receipts:new Set(),shops:new Set()};map.set(key,p)}p.hits.push({date:r.date,store:r.store,price:round3(val(i.total)/q),total:val(i.total),qty:q,invoice:r.invoiceNo});p.spend+=val(i.total);p.shops.add(r.store);p.receipts.add(r.id)})});return [...map.values()].sort(function(a,b){return b.hits.length-a.hits.length||a.name.localeCompare(b.name,'ar')})}
+function measure(i){var q=val(i.quantity)||1,u=i.unit||'حبة';if(u==='جرام')return {quantity:q/1000,unit:'كجم'};if(u==='مل')return {quantity:q/1000,unit:'لتر'};return {quantity:q,unit:u}}
+function pkey(i,r){if(i.productId&&catalogById(i.productId))return 'canonical:'+i.productId+'|unit:'+measure(i).unit;var b=String(i.barcode||'').replace(/\D/g,'');if(b.length>=8)return 'barcode:'+b;var name=norm(i.name),size=norm(i.size);return !name||name.includes('غير واضح')?'unknown:'+r.id+':'+i.id:'name:'+productSignature(name)+'|'+productSignature(size)}
+function products(){var map=new Map();receipts().forEach(function(r){(r.items||[]).forEach(function(i){if(!i.name)return;var key=pkey(i,r),p=map.get(key),m=measure(i),q=m.quantity||1;if(!p){p={key:key,name:itemName(i)+(i.productId?' • لكل '+m.unit:''),barcode:i.barcode||'',hits:[],spend:0,receipts:new Set(),shops:new Set(),unit:m.unit};map.set(key,p)}p.hits.push({date:r.date,store:r.store,price:round3(val(i.total)/q),total:val(i.total),qty:q,invoice:r.invoiceNo});p.spend+=val(i.total);p.shops.add(r.store);p.receipts.add(r.id)})});return [...map.values()].sort(function(a,b){return b.hits.length-a.hits.length||a.name.localeCompare(b.name,'ar')})}
 /* مقارنة أنواع الصنف الواحد عند تساوي نوعه وحجم عبوته، مع الاحتفاظ باسم العلامة المطبوع. */
 function compareFamilies(){
  var groups=new Map();
@@ -126,7 +127,7 @@ function drawCompare(){
   panel=box('<h3>'+h(p.name)+'</h3><p class="hint">موجود في '+p.receipts.size+' فاتورة و '+p.shops.size+' متجر</p>'+
    (p.isFamily?'<div class="alert info">المقارنة تشمل علامات تجارية مختلفة للمنتج نفسه وبالحجم نفسه. نعرض اسم كل علامة أمام متجرها؛ لا نفترض تطابق الجودة أو المكونات.</div>':'')+
    '<div class="grid cols3">'+
-   box('<div class="label">أقل سعر للوحدة</div><div class="big">'+fmt(storeInfo[0].minimum,3)+' ر.س</div>','metric')+
+   box('<div class="label">أقل سعر لكل '+h(p.unit||'وحدة')+'</div><div class="big">'+fmt(storeInfo[0].minimum,3)+' ر.س</div>','metric')+
    box('<div class="label">المتجر الأرخص'+(tied?' بالتساوي':'')+'</div><div class="big store-name">'+h(cheapest)+'</div>','metric')+
    box('<div class="label">إجمالي الصرف على الصنف</div><div class="big">'+sar(p.spend)+'</div>','metric')+
    '</div><div class="space"></div><h3>ترتيب المتاجر حسب الأقل سعرًا</h3><div class="ranked-stores">'+rankCards+'</div>'+
