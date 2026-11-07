@@ -107,9 +107,9 @@ function manualChangeField(node){
 }
 function productMatch(item){if(item.productId&&catalogById(item.productId))return catalogById(item.productId);return (db.catalog||[]).find(function(x){return norm(x.name)===norm(item.name)})}
 function commitLine(){
- var name=String(activeLine.name||'').trim();if(!name)return alert('اكتب اسم الصنف أو اختره من القائمة');
- if(!Number.isFinite(val(activeLine.quantity))||val(activeLine.quantity)<=0)return alert('الكمية أو الوزن يجب أن يكون أكبر من صفر');
- if(val(activeLine.unitPrice)<0||val(activeLine.total)<0)return alert('أدخل سعرًا صالحًا');
+ var name=String(activeLine.name||'').trim();if(!name){alert('اكتب اسم الصنف أو اختره من القائمة');return false;}
+ if(!Number.isFinite(val(activeLine.quantity))||val(activeLine.quantity)<=0){alert('الكمية أو الوزن يجب أن يكون أكبر من صفر');return false;}
+ if(val(activeLine.unitPrice)<0||val(activeLine.total)<0){alert('أدخل سعرًا صالحًا');return false;}
  var match=productMatch(activeLine);if(match){activeLine.productId=match.id;activeLine.name=match.name;activeLine.category=match.category||'أخرى'}
  var line=copy(activeLine);
  if(editLine>=0)entry.items[editLine]=line;else entry.items.push(line);
@@ -117,9 +117,10 @@ function commitLine(){
  entry.subtotal=round3(val(entry.total)-val(entry.vat));
  activeLine=emptyLine();editLine=-1;persistManualDraft();renderManual();
  var node=drawer.querySelector('#activeProductName');if(node){node.focus();node.scrollIntoView({block:'center'})}
- notify('أضيف الصنف؛ يمكنك إدخال الصنف التالي')
+ notify('أضيف الصنف؛ يمكنك إدخال الصنف التالي');return true
 }
 function doSave(){
+ if(activeLine&&activeLine.name&&activeLine.name.trim()){if(commitLine()===false)return}
  if(!entry.store.trim())return alert('أدخل اسم المتجر أولًا');
  if(!/^\d{4}-\d{2}-\d{2}$/.test(entry.date))return alert('التاريخ غير صالح');
  if(!/^\d{2}:\d{2}$/.test(entry.time||''))return alert('وقت الشراء غير صالح');
@@ -135,7 +136,7 @@ function doSave(){
  out.items.forEach(function(i){
   var p=productMatch(i);
   if(!p){p={id:'p-'+rid(),name:i.name.trim(),unit:i.unit||'حبة',category:i.category||'أخرى'};db.catalog.push(p)}
-  i.productId=p.id;i.name=p.name;i.category=p.category||'أخرى';
+  i.productId=p.id;i.name=p.name;i.category=p.category||'أخرى';i.manualCanonical=true;
  });
  out.subtotal=round3(val(out.total)-val(out.vat));out.source=out.source||'إدخال يدوي';out.review=Math.abs(gap)>=.01;
  if(idx<0)db.receipts.push(out);else db.receipts[idx]=out;
@@ -146,14 +147,14 @@ function doSave(){
 function renameCatalog(id){
  var p=catalogById(id);if(!p)return;var name=prompt('الاسم الموحد لهذا الصنف:',p.name);if(name==null)return;name=name.trim();if(!name)return alert('الاسم لا يمكن أن يكون فارغًا');
  if((db.catalog||[]).some(function(x){return x.id!==id&&norm(x.name)===norm(name)}))return alert('الاسم موجود بالفعل؛ استخدم دمج مع صنف');
- var before=copy(db);p.name=name;if(!persist()){db=before;return}draw();notify('تم تعديل الاسم، والربط بالفواتير بقي محفوظًا')
+ var before=copy(db);p.name=name;receipts().forEach(function(r){(r.items||[]).forEach(function(i){if(i.productId===id)i.manualCanonical=true})});if(!persist()){db=before;return}draw();notify('تم تعديل الاسم، والربط بالفواتير بقي محفوظًا')
 }
 function mergeCatalog(sourceId){
  var src=catalogById(sourceId);if(!src)return;var targetName=prompt('اكتب اسم الصنف الآخر الذي تريد الدمج معه. سيبقى الاسم الآخر معتمدًا:',src.name);if(targetName===null)return;
  var target=db.catalog.find(function(p){return p.id!==src.id&&norm(p.name)===norm(targetName)});
  if(!target)return alert('الصنف الهدف غير موجود. اختر اسمًا مسجلًا في دليل الأصناف');
  if(!confirm('دمج «'+src.name+'» في «'+target.name+'»؟ سيُحافظ على الفواتير وأسعارها وتُجمع سجلات المقارنة تحت الاسم المعتمد.'))return;
- var before=copy(db);receipts().forEach(function(r){(r.items||[]).forEach(function(i){if(i.productId===src.id)i.productId=target.id})});db.catalog=db.catalog.filter(function(p){return p.id!==src.id});
+ var before=copy(db);receipts().forEach(function(r){(r.items||[]).forEach(function(i){if(i.productId===src.id||i.productId===target.id){i.productId=target.id;i.manualCanonical=true}})});db.catalog=db.catalog.filter(function(p){return p.id!==src.id});
  if(!persist()){db=before;return}draw();notify('تم دمج المسميات دون حذف أي فاتورة')
 }
 root.addEventListener('input',function(e){
