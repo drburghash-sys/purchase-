@@ -40,3 +40,18 @@
 .manual-sheet .sheet-body{padding-bottom:45px}
 }
 @media(max-width:365px){.manual-sheet .twocol,.manual-sheet .manual-item-form .grid.cols2{grid-template-columns:1fr}}
+
+/* ميزانية واضحة: المرحّل لا يساوي المصروف الجديد أو المتبقي */
+.finance-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+.finance-grid .big{overflow-wrap:anywhere}
+.finance-grid .carry-metric{border-color:#d7e3f1;background:#f7fbff}
+.finance-grid .carry-metric .carry-amount{color:#2f5e8d}
+.finance-grid .budget-metric{border-color:#e5dfcf;background:#fffcf5}
+.finance-grid .expense-metric{border-color:#f0dcdb;background:#fffafa}
+.finance-grid .expense-amount{color:#b14743}
+.finance-grid .remaining-metric{border-color:#c5e2d8;background:#f6fcf8}
+.finance-grid .remaining-metric .big.good{color:#087e79}
+.finance-grid .metric .label{font-weight:700}
+#carryInput{font-size:17px;font-weight:700;direction:ltr;text-align:right}
+@media(max-width:900px){.finance-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:390px){.finance-grid .big{font-size:19px}}
