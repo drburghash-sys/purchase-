@@ -167,9 +167,29 @@ root.addEventListener('change',function(e){
  if(e.target.id==='searchProducts'){prodSearch=e.target.value;selectedProduct='';draw()}
  if(e.target.id==='restoreFile'&&e.target.files&&e.target.files[0]){e.target.files[0].text().then(mergeBackup).catch(function(err){alert('تعذر الاستعادة: '+err.message)})}
 });
+function saveCarryForMonth(m,raw){
+ if(!/^\d{4}-\d{2}$/.test(m||'')||!budgetLedger().some(function(row){return row.month===m}))return alert('الشهر المطلوب غير موجود في كشف الميزانية');
+ var entered=String(raw==null?'':raw).trim(),number=Number(entered);
+ if(!entered||!Number.isFinite(number))return alert('أدخل رصيدًا مرحّلًا صحيحًا. يمكن إدخال رصيد سالب إذا كان هناك عجز.');
+ var amount=round3(number),before=copy(db);
+ if(!db.carryOverrides||typeof db.carryOverrides!=='object')db.carryOverrides={};
+ db.carryOverrides[m]=amount;
+ if(!persist()){db=before;return}
+ draw();notify('تم حفظ رصيد '+mtitle(m)+' المرحّل، دون تعديل المشتريات');
+}
+function resetCarryForMonth(m){
+ if(!db.carryOverrides||!Object.prototype.hasOwnProperty.call(db.carryOverrides,m))return;
+ if(!confirm('إلغاء تعديل الرصيد المرحّل لشهر '+mtitle(m)+' والعودة إلى المبلغ المحسوب تلقائيًا؟'))return;
+ var before=copy(db);delete db.carryOverrides[m];
+ if(!persist()){db=before;return}
+ draw();notify('عاد رصيد '+mtitle(m)+' إلى الترحيل التلقائي');
+}
 root.addEventListener('click',function(e){
  var b=e.target.closest('[data-action]');if(!b)return;var act=b.dataset.action,id=b.dataset.id;
- if(act==='manualNew'||act==='import')openManualNew();
+ if(act==='saveCarry'){var m=b.dataset.month;var field=document.getElementById('carryInput');if(field)saveCarryForMonth(m,field.value)}
+ else if(act==='resetCarry')resetCarryForMonth(b.dataset.month);
+ else if(act==='editCarryMonth'){monthFilter=b.dataset.month;page='months';draw();var input=document.getElementById('carryInput');if(input){input.focus();input.scrollIntoView({block:'center',behavior:'smooth'})}}
+ else if(act==='manualNew'||act==='import')openManualNew();
  else if(act==='edit'){var r=receipts().find(function(x){return x.id===id});if(r)openManualEdit(r)}
  else if(act==='oneExport')exportOne(id);
  else if(act==='backup')downloadBackup();
