@@ -54,7 +54,7 @@ function products(){var map=new Map();receipts().forEach(function(r){(r.items||[
 function compareFamilies(){
  var groups=new Map();
  receipts().forEach(function(r){(r.items||[]).forEach(function(i){
-  if(i.productId&&catalogById(i.productId))return;var name=String(i.name||''),clean=norm(name);
+  if(i.manualCanonical&&i.productId&&catalogById(i.productId))return;var name=String(i.name||''),clean=norm(name);
   if(!clean||clean.includes('غير واضح'))return;
   var ascii=name.replace(/[٠-٩]/g,function(d){return '٠١٢٣٤٥٦٧٨٩'.indexOf(d)}).replace(/[۰-۹]/g,function(d){return '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)});
   /* لا نخلط التونة العادية مع السلطات أو عبوات بأحجام مختلفة. */
