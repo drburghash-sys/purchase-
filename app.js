@@ -84,30 +84,68 @@ function storeRanking(p){
  return rows;
 }
 function monthsData(){var map=new Map();receipts().forEach(function(r){var m=String(r.date||'').slice(0,7);if(!/^\d{4}-\d{2}$/.test(m))return;if(!map.has(m))map.set(m,{month:m,spent:0,vat:0,count:0});var x=map.get(m);x.spent=round3(x.spent+val(r.total));x.vat=round3(x.vat+val(r.vat));x.count++});return map}
-function budgetLedger(){var months=[...monthsData().keys()].sort(),start=months[0]||monthNow(),end=months.length&&months[months.length-1]>monthNow()?months[months.length-1]:monthNow(),map=monthsData(),carry=0,base=val(db.monthlyBudget);return monthRange(start,end).map(function(m){var x=map.get(m)||{spent:0,vat:0,count:0},opening=carry,available=round3(base+opening),closing=round3(available-x.spent);carry=closing;return {month:m,base:base,opening:opening,available:available,spent:x.spent,vat:x.vat,count:x.count,closing:closing}})}
+function budgetLedger(){
+ var months=[...monthsData().keys()].sort(),start=months[0]||monthNow(),end=months.length&&months[months.length-1]>monthNow()?months[months.length-1]:monthNow(),map=monthsData(),carry=0,base=val(db.monthlyBudget),overrides=db.carryOverrides||{};
+ return monthRange(start,end).map(function(m){
+  var x=map.get(m)||{spent:0,vat:0,count:0},automaticCarry=carry;
+  var manualCarry=Object.prototype.hasOwnProperty.call(overrides,m)&&Number.isFinite(Number(overrides[m]));
+  var opening=manualCarry?round3(Number(overrides[m])):automaticCarry,available=round3(base+opening),closing=round3(available-x.spent);
+  carry=closing;
+  return {month:m,base:base,automaticCarry:automaticCarry,opening:opening,manualCarry:manualCarry,adjustment:round3(opening-automaticCarry),available:available,spent:x.spent,vat:x.vat,count:x.count,closing:closing};
+ });
+}
 function averages(){var l=budgetLedger(),active=l.filter(function(r){return r.count}),total=add(l,function(r){return r.spent});return {total:total,months:l.length,active:active.length,average:l.length?round3(total/l.length):0,activeAverage:active.length?round3(total/active.length):0}}
 function bars(rows){if(!rows.length)return '<div class="empty">لا توجد بيانات للعرض</div>';var high=Math.max(1,...rows.map(function(r){return Math.abs(r.value)}));return rows.slice(0,14).map(function(r){return '<div class="barrow"><span title="'+h(r.name)+'" class="barlabel">'+h(r.name)+'</span><div class="bartrack"><div class="barfill" style="width:'+Math.max(0,100*Math.abs(r.value)/high).toFixed(1)+'%"></div></div><b class="value">'+fmt(r.value)+'</b></div>'}).join('')}
 function storeTotals(source){var data=source||receipts();return [...new Set(data.map(function(r){return r.store}))].map(function(s){return {name:s||'غير معروف',value:add(data.filter(function(r){return r.store===s}),function(r){return r.total})}}).sort(function(a,b){return b.value-a.value})}
 function invoiceCard(r){var difference=diff(r);return box('<div class="between"><div><div class="name">'+h(r.store)+'</div><div class="sub">'+h(r.date)+(r.time?' '+h(r.time):'')+' • رقم '+h(r.invoiceNo||'—')+' • '+h(r.branch||'')+'</div></div><strong class="money">'+fmt(r.total,3)+' ر.س</strong></div><div class="statline pull"><span class="tag">'+(r.items||[]).length+' سطر</span><span class="tag">الضريبة '+fmt(r.vat,3)+'</span>'+(r.review?'<span class="pill review">مراجعة</span>':'')+(Math.abs(difference)>=.01?'<span class="pill review">الفرق '+fmt(difference,3)+'</span>':'')+'</div><div class="actions">'+btn('عرض وتعديل','edit','primary small','data-id="'+h(r.id)+'"')+btn('نسخ الفاتورة','oneExport','secondary small','data-id="'+h(r.id)+'"')+'</div>','receipt')}
-function drawHome(){var l=budgetLedger(),thisRow=l.find(function(x){return x.month===monthNow()})||l[l.length-1],allSum=add(receipts(),function(r){return r.total}),recent=byDate().slice(0,3),reviews=receipts().filter(function(r){return r.review||Math.abs(diff(r))>=.01});return title('الرئيسية','عرض شامل دون فلتر شهر',btn('＋ شراء جديد','manualNew','primary'))+'<div class="grid cols4">'+
- box('<div class="label">مجموع الفواتير</div><div class="big">'+sar(allSum)+'</div><div class="hint">'+receipts().length+' فاتورة','metric feature')+
- box('<div class="label">مصروف الشهر الحالي</div><div class="big">'+sar(thisRow.spent)+'</div><div class="hint">'+mtitle(thisRow.month)+'</div>','metric')+
- box('<div class="label">المتبقي المرحّل</div><div class="big '+(thisRow.closing<0?'up':'good')+'">'+(db.monthlyBudget?sar(thisRow.closing):'غير محدد')+'</div><div class="hint">يشمل باقي الأشهر السابقة</div>','metric')+
- box('<div class="label">متوسط الإنفاق الشهري</div><div class="big">'+sar(averages().average)+'</div><div class="hint">متوسط جميع الأشهر التقويمية</div>','metric')+'</div>'+
+function carryForm(row){
+ var helper=row.manualCarry?'<span class="pill review">رصيد معدّل يدويًا</span> <span class="hint">الفرق عن الترحيل التلقائي: '+sar(row.adjustment)+'</span>':'<span class="pill">ترحيل تلقائي</span> <span class="hint">الرصيد الناتج من الشهر السابق: '+sar(row.automaticCarry)+'</span>';
+ return box('<div class="between"><div><h3>تعديل الرصيد المرحّل — '+h(mtitle(row.month))+'</h3><p class="hint">يمكنك إدخال الرصيد الحقيقي المرحّل من الشهر السابق. هذه تسوية للرصيد فقط؛ لا تُغيّر الفواتير أو مصروف الشهر.</p></div>'+helper+'</div>'+
+ '<div class="controls"><div class="field"><label>الرصيد المرحّل إلى هذا الشهر (ريال)</label><input id="carryInput" type="number" inputmode="decimal" step="0.001" value="'+h(row.opening)+'" aria-label="الرصيد المرحّل من الشهر السابق"></div>'+
+ btn('حفظ الرصيد المرحّل','saveCarry','primary','data-month="'+h(row.month)+'"')+
+ (row.manualCarry?btn('إلغاء التعديل والعودة للترحيل التلقائي','resetCarry','secondary','data-month="'+h(row.month)+'"'):'')+'</div>'+
+ '<p class="hint">الميزانية الجديدة '+sar(row.base)+' + المرحّل '+sar(row.opening)+' − المصروف الجديد '+sar(row.spent)+' = <strong>المتبقي الحالي '+sar(row.closing)+'</strong></p>');
+}
+function drawHome(){
+ var ledger=budgetLedger(),monthRow=ledger.find(function(r){return r.month===monthNow()})||ledger[ledger.length-1],
+ grand=add(receipts(),function(r){return r.total}),recent=byDate().slice(0,3),
+ reviews=receipts().filter(function(r){return r.review||Math.abs(diff(r))>=.01});
+ return title('الرئيسية','ميزانية جديدة، رصيد مرحّل، ومصروف جديد بأرقام منفصلة',btn('＋ شراء جديد','manualNew','primary'))+
+ '<div class="grid finance-grid">'+
+ box('<div class="label">إجمالي الفواتير منذ البداية</div><div class="big">'+sar(grand)+'</div><div class="hint">'+receipts().length+' فاتورة','metric feature')+
+ box('<div class="label">الرصيد المرحّل من الشهر السابق</div><div class="big carry-amount">'+sar(monthRow.opening)+'</div><div class="hint">'+(monthRow.manualCarry?'تم تعديله يدويًا':'محسوب من الشهر السابق')+'</div>','metric carry-metric')+
+ box('<div class="label">ميزانية الشهر الجديدة</div><div class="big">'+sar(monthRow.base)+'</div><div class="hint">'+h(mtitle(monthRow.month))+' • مبلغ الشهر فقط</div>','metric budget-metric')+
+ box('<div class="label">المصروف الجديد لهذا الشهر</div><div class="big expense-amount">'+sar(monthRow.spent)+'</div><div class="hint">'+monthRow.count+' فاتورة خلال '+h(mtitle(monthRow.month))+'</div>','metric expense-metric')+
+ box('<div class="label">المتبقي الحالي بعد الصرف</div><div class="big '+(monthRow.closing<0?'up':'good')+'">'+sar(monthRow.closing)+'</div><div class="hint">المرحّل + الميزانية الجديدة − المصروف الجديد</div>','metric remaining-metric')+
+ box('<div class="label">متوسط الإنفاق الشهري</div><div class="big">'+sar(averages().average)+'</div><div class="hint">متوسط جميع الأشهر التقويمية</div>','metric')+
+ '</div><div class="space"></div>'+carryForm(monthRow)+
  (reviews.length?'<div class="alert">هناك '+reviews.length+' فاتورة أولية أو ذات فرق بين البنود والإجمالي؛ راجعها من قسم الفواتير.</div>':'')+
- '<div class="space"></div><div class="grid cols2">'+box('<h3>الإنفاق حسب المتجر • جميع الأشهر</h3>'+bars(storeTotals()))+box('<h3>الفواتير الحديثة</h3>'+(recent.length?recent.map(function(r){return '<div class="listrow between"><div><b>'+h(r.store)+'</b><div class="hint">'+h(r.date)+'</div></div><div>'+sar(r.total)+' '+btn('فتح','edit','secondary small','data-id="'+h(r.id)+'"')+'</div></div>'}).join(''):'<div class="empty">لا توجد فواتير</div>'))+'</div>'+
- '<div class="alert info">الميزانية الأساسية ثابتة كل شهر، وينتقل رصيد الشهر السابق تلقائيًا للشهر الجديد. يُرحّل العجز أيضًا لعدم إخفاء زيادة الإنفاق.</div>'}
+ '<div class="space"></div><div class="grid cols2">'+
+ box('<h3>الإنفاق حسب المتجر • جميع الأشهر</h3>'+bars(storeTotals()))+
+ box('<h3>الفواتير الحديثة</h3>'+(recent.length?recent.map(function(r){return '<div class="listrow between"><div><b>'+h(r.store)+'</b><div class="hint">'+h(r.date)+'</div></div><div>'+sar(r.total)+' '+btn('فتح','edit','secondary small','data-id="'+h(r.id)+'"')+'</div></div>'}).join(''):'<div class="empty">لا توجد فواتير</div>'))+
+ '</div><div class="alert info">المتبقي الحالي هو ناتج الشهر بعد الصرف، وليس رصيدًا مرحّلًا. تعديل المرحّل يؤثر في الأرصدة اللاحقة، ولا يضيف أي مصروف جديد.</div>';
+}
 function drawReceipts(){return title('الفواتير','جميع الفواتير من كل الأشهر في قائمة واحدة',btn('＋ شراء جديد','manualNew','primary'))+box('<div class="field"><label>البحث في المتجر ورقم الفاتورة والأصناف</label><input id="invoiceSearch" placeholder="بحث في جميع الأشهر" value="'+h(searchText)+'"></div><p class="hint">'+receipts().length+' فاتورة محفوظة</p>')+'<div class="space"></div><div class="receipts" id="receiptResults"></div>'}
 function receiptResults(){var e=document.getElementById('receiptResults'),q=norm(searchText);if(!e)return;var list=byDate().filter(function(r){return !q||norm([r.store,r.branch,r.invoiceNo].concat((r.items||[]).map(function(i){return i.name})).join(' ')).includes(q)});e.innerHTML=list.length?list.map(invoiceCard).join(''):'<div class="card empty">لا توجد نتائج</div>'}
-function drawMonths(){var l=budgetLedger(),stat=averages(),selected=monthFilter?l.find(function(x){return x.month===monthFilter}):null,shown=selected?[selected]:l.slice().reverse(),total=add(shown,function(x){return x.spent}),vat=add(shown,function(x){return x.vat}),count=shown.reduce(function(s,x){return s+x.count},0),opts=[['','جميع الأشهر']].concat(l.slice().reverse().map(function(x){return [x.month,mtitle(x.month)]}));return title('المصروف الشهري','صفحة مستقلة للتواريخ والإجماليات والمتوسط')+
- box('<div class="controls">'+options('monthFilter','الفترة',monthFilter,opts)+'</div><div class="grid cols4">'+
- box('<div class="label">إجمالي الصرف</div><div class="big">'+sar(total)+'</div>','metric')+
- box('<div class="label">الفواتير</div><div class="big">'+count+'</div>','metric')+
- box('<div class="label">الضريبة المكتوبة</div><div class="big">'+sar(vat)+'</div>','metric')+
- box('<div class="label">'+(selected?'الرصيد بنهاية الشهر':'متوسط الإنفاق')+'</div><div class="big">'+sar(selected?selected.closing:stat.average)+'</div>','metric')+'</div>')+
- '<div class="space"></div>'+box('<h3>المشتريات شهريًا</h3>'+bars(l.map(function(x){return {name:mtitle(x.month),value:x.spent}}))+'<p class="hint">المتوسط لجميع الأشهر: '+sar(stat.average)+' • متوسط أشهر الشراء فقط: '+sar(stat.activeAverage)+' • عدد الأشهر: '+stat.months+'</p>')+
- '<div class="space"></div>'+box('<h3>كشف الرصيد المرحّل</h3><div class="tablewrap"><table><thead><tr><th>الشهر</th><th>ميزانية الشهر</th><th>مرحّل من السابق</th><th>الإنفاق</th><th>المتبقي</th><th>عدد الفواتير</th></tr></thead><tbody>'+shown.map(function(x){return '<tr><td>'+h(mtitle(x.month))+'</td><td>'+sar(x.base)+'</td><td>'+sar(x.opening)+'</td><td>'+sar(x.spent)+'</td><td class="'+(x.closing<0?'up':'good')+'">'+sar(x.closing)+'</td><td>'+x.count+'</td></tr>'}).join('')+'</tbody></table></div><p class="hint">المتبقي = الميزانية الشهرية الثابتة + رصيد الشهر الماضي − إنفاق الشهر. اختيار شهر هنا يغيّر العرض فقط.</p>')+
- '<div class="space"></div>'+box('<h3>المتاجر في الفترة المختارة</h3>'+bars(storeTotals(receipts().filter(function(r){return !monthFilter||r.date.slice(0,7)===monthFilter}))))}
+function drawMonths(){
+ var ledger=budgetLedger(),stats=averages(),selected=monthFilter?ledger.find(function(x){return x.month===monthFilter}):null,
+ shown=selected?[selected]:ledger.slice().reverse(),spent=add(shown,function(x){return x.spent}),vat=add(shown,function(x){return x.vat}),
+ count=shown.reduce(function(n,x){return n+x.count},0),monthChoices=[['','جميع الأشهر']].concat(ledger.slice().reverse().map(function(x){return [x.month,mtitle(x.month)]}));
+ return title('المصروف الشهري','المرحّل والميزانية الجديدة والمشتريات والمتبقي، كلٌ على حدة')+
+ box('<div class="controls">'+options('monthFilter','الفترة',monthFilter,monthChoices)+'</div><div class="grid cols4">'+
+ box('<div class="label">مصروفات جديدة للفترة</div><div class="big expense-amount">'+sar(spent)+'</div>','metric expense-metric')+
+ box('<div class="label">عدد الفواتير</div><div class="big">'+count+'</div>','metric')+
+ box('<div class="label">ضريبة الفواتير</div><div class="big">'+sar(vat)+'</div>','metric')+
+ box('<div class="label">'+(selected?'المتبقي آخر الشهر':'متوسط المصروف الشهري')+'</div><div class="big">'+sar(selected?selected.closing:stats.average)+'</div>','metric')+
+ '</div>')+
+ (selected?'<div class="space"></div>'+carryForm(selected):'')+
+ '<div class="space"></div>'+box('<h3>المشتريات الجديدة لكل شهر</h3>'+bars(ledger.map(function(x){return {name:mtitle(x.month),value:x.spent}}))+
+ '<p class="hint">متوسط جميع الأشهر: '+sar(stats.average)+' • متوسط أشهر الشراء فقط: '+sar(stats.activeAverage)+' • الأشهر: '+stats.months+'</p>')+
+ '<div class="space"></div>'+box('<h3>كشف الميزانية والترحيل</h3><div class="tablewrap"><table><thead><tr><th>الشهر</th><th>ميزانية جديدة</th><th>مرحّل من السابق</th><th>مصروف جديد</th><th>المتبقي آخر الشهر</th><th>الفواتير</th><th>تعديل</th></tr></thead><tbody>'+
+ shown.map(function(x){return '<tr><td>'+h(mtitle(x.month))+'</td><td>'+sar(x.base)+'</td><td>'+sar(x.opening)+(x.manualCarry?'<div class="hint review">يدوي • فرق '+sar(x.adjustment)+'</div>':'')+'</td><td>'+sar(x.spent)+'</td><td class="'+(x.closing<0?'up':'good')+'"><b>'+sar(x.closing)+'</b></td><td>'+x.count+'</td><td>'+btn('تعديل المرحّل','editCarryMonth','secondary small','data-month="'+h(x.month)+'"')+'</td></tr>'}).join('')+
+ '</tbody></table></div><p class="hint">المتبقي آخر الشهر = الرصيد المرحّل + الميزانية الجديدة − المصروف الجديد. التعديل اليدوي على المرحّل لا يغير أي فاتورة، ويمكن إلغاؤه للعودة للحساب التلقائي.</p>')+
+ '<div class="space"></div>'+box('<h3>مصروف المتاجر خلال الفترة</h3>'+bars(storeTotals(receipts().filter(function(r){return !monthFilter||r.date.slice(0,7)===monthFilter}))));
+}
 function graph(hits){if(!hits.length)return '<div class="empty">لا توجد أسعار</div>';var a=hits.slice().sort(function(x,y){return x.date.localeCompare(y.date)}),vals=a.map(function(x){return x.price}),lo=Math.min.apply(null,vals),hi=Math.max.apply(null,vals);if(lo===hi){lo=Math.max(0,lo-.5);hi+=.5}var w=680,H=220,L=62,R=26,T=20,B=48,xx=function(i){return L+(a.length===1?(w-L-R)/2:(w-L-R)*i/(a.length-1))},yy=function(x){return T+(hi-x)/(hi-lo)*(H-T-B)};return '<svg class="lineplot" viewBox="0 0 '+w+' '+H+'" role="img" aria-label="تطور السعر">'+[0,.25,.5,.75,1].map(function(v){var y=T+v*(H-T-B);return '<line x1="'+L+'" y1="'+y+'" x2="'+(w-R)+'" y2="'+y+'" stroke="#dce6e7"/><text x="'+(L-7)+'" y="'+(y+4)+'" text-anchor="end" font-size="12" fill="#6e8387">'+fmt(hi-v*(hi-lo))+'</text>'}).join('')+'<polyline points="'+a.map(function(x,i){return xx(i)+','+yy(x.price)}).join(' ')+'" fill="none" stroke="#087e79" stroke-width="3"/>'+a.map(function(x,i){return '<circle cx="'+xx(i)+'" cy="'+yy(x.price)+'" r="5" fill="#087e79"><title>'+h(x.date+' • '+x.store+' • '+sar(x.price))+'</title></circle><text x="'+xx(i)+'" y="'+(H-9)+'" text-anchor="middle" font-size="11" fill="#6e8387">'+h(x.date.slice(5))+'</text>'}).join('')+'</svg>'}
 function drawCompare(){
  var list=comparisonProducts(),query=norm(prodSearch),matches=list.filter(function(x){return !query||norm(x.name).includes(query)||(x.isFamily&&[...x.brands].some(function(name){return norm(name).includes(query)}))}),
