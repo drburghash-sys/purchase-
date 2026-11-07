@@ -177,6 +177,15 @@ function saveCarryForMonth(m,raw){
  if(!persist()){db=before;return}
  draw();notify('تم حفظ رصيد '+mtitle(m)+' المرحّل، دون تعديل المشتريات');
 }
+function saveClosingForMonth(m,raw){
+ var row=budgetLedger().find(function(x){return x.month===m});
+ if(!row)return alert('الشهر المطلوب غير موجود في الميزانية');
+ var input=String(raw==null?'':raw).trim(),desired=Number(input);
+ if(!input||!Number.isFinite(desired))return alert('أدخل رقمًا صحيحًا للمتبقي الحالي');
+ var newCarry=round3(round3(desired)-row.base+row.spent);
+ if(!confirm('سيُضبط المتبقي آخر '+mtitle(m)+' على '+sar(desired)+' عن طريق تعديل الرصيد المرحّل إلى '+sar(newCarry)+'. لن تتغير أي فاتورة أو ميزانية. هل توافق؟'))return;
+ saveCarryForMonth(m,String(newCarry));
+}
 function resetCarryForMonth(m){
  if(!db.carryOverrides||!Object.prototype.hasOwnProperty.call(db.carryOverrides,m))return;
  if(!confirm('إلغاء تعديل الرصيد المرحّل لشهر '+mtitle(m)+' والعودة إلى المبلغ المحسوب تلقائيًا؟'))return;
@@ -186,7 +195,8 @@ function resetCarryForMonth(m){
 }
 root.addEventListener('click',function(e){
  var b=e.target.closest('[data-action]');if(!b)return;var act=b.dataset.action,id=b.dataset.id;
- if(act==='saveCarry'){var m=b.dataset.month;var field=document.getElementById('carryInput');if(field)saveCarryForMonth(m,field.value)}
+ if(act==='saveClosing'){var m=b.dataset.month;var field=document.getElementById('closingInput');if(field)saveClosingForMonth(m,field.value)}
+ else if(act==='saveCarry'){var m=b.dataset.month;var field=document.getElementById('carryInput');if(field)saveCarryForMonth(m,field.value)}
  else if(act==='resetCarry')resetCarryForMonth(b.dataset.month);
  else if(act==='editCarryMonth'){monthFilter=b.dataset.month;page='months';draw();var input=document.getElementById('carryInput');if(input){input.focus();input.scrollIntoView({block:'center',behavior:'smooth'})}}
  else if(act==='manualNew'||act==='import')openManualNew();
