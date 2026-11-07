@@ -104,6 +104,9 @@ function carryForm(row){
  '<div class="controls"><div class="field"><label>الرصيد المرحّل إلى هذا الشهر (ريال)</label><input id="carryInput" type="number" inputmode="decimal" step="0.001" value="'+h(row.opening)+'" aria-label="الرصيد المرحّل من الشهر السابق"></div>'+
  btn('حفظ الرصيد المرحّل','saveCarry','primary','data-month="'+h(row.month)+'"')+
  (row.manualCarry?btn('إلغاء التعديل والعودة للترحيل التلقائي','resetCarry','secondary','data-month="'+h(row.month)+'"'):'')+'</div>'+
+ '<div class="divider"></div><div class="controls"><div class="field"><label>أو صحّح المتبقي الحالي الظاهر في الشاشة (ريال)</label><input id="closingInput" type="number" inputmode="decimal" step="0.001" value="'+h(row.closing)+'" aria-label="تصحيح المتبقي بعد الصرف"></div>'+
+ btn('حفظ المتبقي المصحح','saveClosing','secondary','data-month="'+h(row.month)+'"')+'</div>'+
+ '<p class="hint">تصحيح المتبقي يُحسب كتسوية للرصيد المرحّل. لا يُسجل شراءً جديدًا ولا يغيّر الضريبة أو الفواتير.</p>'+
  '<p class="hint">الميزانية الجديدة '+sar(row.base)+' + المرحّل '+sar(row.opening)+' − المصروف الجديد '+sar(row.spent)+' = <strong>المتبقي الحالي '+sar(row.closing)+'</strong></p>');
 }
 function drawHome(){
