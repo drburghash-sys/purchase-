@@ -11,7 +11,7 @@ function val(s){return Number(String(s==null?'':s).trim().replace(/[٠-٩]/g,fun
 function fmt(v,d){return Number(v||0).toLocaleString('ar-SA-u-nu-latn',{minimumFractionDigits:d==null?2:d,maximumFractionDigits:d==null?2:d})}
 function sar(x){return fmt(x)+' ر.س'}
 function h(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
-function today(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
+function today(){var parts=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Riyadh',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date()),o={};parts.forEach(function(x){o[x.type]=x.value});return o.year+'-'+o.month+'-'+o.day}
 function monthNow(){return today().slice(0,7)}
 function mtitle(m){return /^\d{4}-\d{2}$/.test(m||'')?new Intl.DateTimeFormat('ar-SA-u-nu-latn',{month:'long',year:'numeric',calendar:'gregory'}).format(new Date(m+'-01T12:00:00')):m||'—'}
 function nextMonth(m){var d=new Date(Number(m.slice(0,4)),Number(m.slice(5,7)),1);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')}
